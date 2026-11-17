@@ -1,21 +1,19 @@
-﻿(function () {
+(function () {
   const APP = window.APP;
   const grp = APP.groups.start;
-  let subMode = 'scan'; // 'scan' | 'physics'
-  let physState = 'healthy'; // 'healthy' | 'slivers' | 'inverted'
+  let subMode = 'scan';
+  let physState = 'healthy';
   let mWall, mCaps, capSpheres = [], highlightRing;
 
-  // Create clean 2D canvas overlay inside viewport-wrap for Mode B
   const c2d = document.createElement('canvas');
   c2d.id = 'canvas2d-physics';
-  c2d.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:5;background:radial-gradient(circle at 50% 45%,#132038 0%,#070c17 100%);display:none;';
+  c2d.style.cssText = 'position:absolute;top:18px;bottom:18px;right:24px;width:min(56vw,780px);z-index:18;border-radius:18px;border:1px solid rgba(255,245,235,0.16);background:rgba(24,8,12,0.92);display:none;';
   APP.wrap.appendChild(c2d);
   const ctx = c2d.getContext('2d');
 
-  // Blood flow particles for 2D visual
   const particles = Array.from({ length: 75 }, (_, i) => ({
     u: (i * 0.137) % 1,
-    v: ((i * 0.293) % 1) * 2 - 1, // -1 (top wall) to +1 (bottom wall)
+    v: ((i * 0.293) % 1) * 2 - 1,
     jitter: (i % 7) * 0.9
   }));
 
@@ -26,48 +24,53 @@
     ).join('') : '';
 
     document.getElementById('panel-start').innerHTML = `
-      <div class="kicker">Shared Starting Point &amp; Rules</div>
-      <div class="title">From Hollow CT Skin to Simulation Rules</div>
+      <div class="kicker">Chapter 1 &bull; Clinical Input &amp; Solver Rules</div>
+      <div class="title">From Hollow CT Surface to Simulation Requirements</div>
       <p class="copy">
-        Stage 1 produces a <b>hollow triangle skin</b> (<code>AAA_model.stl</code>) with 11 flat inlet/outlet caps. Switch below to inspect the anatomy and see why blood-flow solvers care about element shapes.
+        Medical image segmentation (Step 1) outputs a <b>hollow triangle shell</b> (<code>AAA_model.stl</code>, Stanford VMR case <code>0039_H_ABAO_AAA</code>) bounded by 11 flat inlet/outlet caps. Before blood flow or wall stress can be solved, that hollow shell must become a clean 3D volumetric grid.
       </p>
       <div class="card">
-        <div class="sec-lbl">Start View</div>
+        <div class="sec-lbl">Chapter 1 Views</div>
         <div class="row">
-          <button class="btn active" id="st-btn-scan" style="flex:1;" onclick="APP.modules.start.setSub('scan')">1. Hollow Skin &amp; 11 Caps</button>
-          <button class="btn" id="st-btn-phys" style="flex:1;" onclick="APP.modules.start.setSub('physics')">2. Why Quality Matters</button>
+          <button class="btn active" id="st-btn-scan" style="flex:1;" onclick="APP.modules.start.setSub('scan')">Fig. 1: Raw Surface &amp; Caps</button>
+          <button class="btn" id="st-btn-phys" style="flex:1;" onclick="APP.modules.start.setSub('physics')">Fig. 2: Why Quality Matters</button>
         </div>
       </div>
 
       <div id="st-scan-controls">
         <div class="card">
-          <div class="sec-lbl">Inspect Raw STL</div>
-          <div class="row"><label><input type="checkbox" id="st-caps" checked onchange="APP.modules.start.syncScan()" /> Highlight 11 End-Caps (Cyan)</label></div>
-          <div class="row"><label><input type="checkbox" id="st-wire" onchange="APP.modules.start.syncScan()" /> Show Raw Scan Triangles</label></div>
-          <div class="sec-lbl" style="margin-top:8px;">Click Any of the 11 Named Caps to Focus</div>
+          <div class="sec-lbl">Inspect Segmented STL (161,944 Tris)</div>
+          <div class="row"><label><input type="checkbox" id="st-caps" checked onchange="APP.modules.start.syncScan()" /> Highlight 11 Inlet/Outlet Caps (Cyan)</label></div>
+          <div class="row"><label><input type="checkbox" id="st-wire" onchange="APP.modules.start.syncScan()" /> Overlay Raw Marching-Cubes Triangles</label></div>
+          <div class="sec-lbl" style="margin-top:8px;">Focus Any of the 11 Named Vessel Caps</div>
           <div class="cap-grid">${capHtml}</div>
         </div>
       </div>
 
       <div id="st-phys-controls" class="hidden">
         <div class="card">
-          <div class="sec-lbl">Pick a Mesh Condition</div>
+          <div class="sec-lbl">Simulate Cell Shape Impact</div>
           <div style="display:flex;flex-direction:column;gap:6px;">
-            <button class="btn active" id="st-p-healthy" onclick="APP.modules.start.setPhys('healthy')">1. Healthy Clean Mesh (Gamma &rarr; 1.0)</button>
-            <button class="btn" id="st-p-slivers" onclick="APP.modules.start.setPhys('slivers')">2. Squished Needle Cells (Gamma &approx; 0)</button>
+            <button class="btn active" id="st-p-healthy" onclick="APP.modules.start.setPhys('healthy')">1. Well-Shaped Cells (&gamma; &rarr; 1.0)</button>
+            <button class="btn" id="st-p-slivers" onclick="APP.modules.start.setPhys('slivers')">2. Flat Sliver Cells (&gamma; &approx; 0)</button>
             <button class="btn btn-danger" id="st-p-inverted" onclick="APP.modules.start.setPhys('inverted')">3. Folded Bowtie Cell (minSICN &lt; 0)</button>
           </div>
         </div>
         <div class="card">
-          <div class="sec-lbl">What Happens to Blood Flow</div>
+          <div class="sec-lbl">Effect on Finite-Element Solver</div>
           <p class="copy" id="st-phys-copy" style="margin-top:0;font-size:12.2px;"></p>
           <div class="row" style="margin-top:8px;">
-            <span>Solver Status:</span>
+            <span style="font-size:12px;color:var(--muted);">Solver Status:</span>
             <span id="st-phys-pill" class="pill">CONVERGED</span>
           </div>
           ${APP.speedHtml()}
         </div>
       </div>
+
+      <button class="btn next-chapter-btn" onclick="APP.goTab('branchA')">
+        <span>Next: Approach A (Unstructured Remeshing)</span>
+        <span>&rarr;</span>
+      </button>
     `;
   }
 
@@ -98,7 +101,7 @@
   }
 
   function drawPhysics2D(now) {
-    const rect = APP.wrap.getBoundingClientRect();
+    const rect = c2d.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     if (c2d.width !== Math.floor(rect.width * dpr) || c2d.height !== Math.floor(rect.height * dpr)) {
       c2d.width = Math.floor(rect.width * dpr);
@@ -112,11 +115,9 @@
     const yMid = H * 0.50, halfH = Math.min(H * 0.25, 160 * dpr);
     const yTop = yMid - halfH, yBot = yMid + halfH;
 
-    // Wall shear glow band
     ctx.fillStyle = physState === 'inverted' ? 'rgba(251,113,133,0.12)' : 'rgba(56,189,248,0.10)';
     ctx.fillRect(x0, yTop, pipeW, halfH * 2);
 
-    // Build 2D artery mesh grid (cols x rows: 2 top BL rows, 4 core rows, 2 bottom BL rows)
     const cols = 12;
     const rowFracs = [-1.0, -0.90, -0.78, -0.38, 0.0, 0.38, 0.78, 0.90, 1.0];
     const pts = [];
@@ -125,12 +126,11 @@
       for (let c = 0; c <= cols; c++) {
         let px = x0 + (c / cols) * pipeW;
         let py = yMid + rowFracs[r] * halfH;
-        // Distort specific cells in slivers / inverted modes
         if (physState === 'slivers') {
-          if (r === 6 && c >= 5 && c <= 7) py = yMid + 0.875 * halfH; // razor thin gap against wall
+          if (r === 6 && c >= 5 && c <= 7) py = yMid + 0.875 * halfH;
           if (r === 5 && c === 6) py = yMid + 0.84 * halfH;
         } else if (physState === 'inverted') {
-          if (r === 7 && c === 6) py = yMid + 0.68 * halfH; // inner BL node shoots past next row -> folded bowtie!
+          if (r === 7 && c === 6) py = yMid + 0.68 * halfH;
           if (r === 6 && c === 6) py = yMid + 0.95 * halfH;
         }
         row.push({ x: px, y: py });
@@ -138,7 +138,6 @@
       pts.push(row);
     }
 
-    // Draw mesh cells
     for (let r = 0; r < rowFracs.length - 1; r++) {
       const isBL = (r <= 1 || r >= 6);
       for (let c = 0; c < cols; c++) {
@@ -158,7 +157,6 @@
           ctx.lineWidth = isBadZone ? 2.2 * dpr : 1.1 * dpr;
           ctx.stroke();
         } else {
-          // Draw 2 core triangles per quad
           [[p00, p10, p11], [p00, p11, p01]].forEach(tri => {
             ctx.beginPath();
             ctx.moveTo(tri[0].x, tri[0].y); ctx.lineTo(tri[1].x, tri[1].y); ctx.lineTo(tri[2].x, tri[2].y);
@@ -173,7 +171,6 @@
       }
     }
 
-    // Thick outer artery walls
     ctx.strokeStyle = '#94a3b8';
     ctx.lineWidth = 4 * dpr;
     ctx.beginPath();
@@ -181,7 +178,6 @@
     ctx.moveTo(x0, yBot); ctx.lineTo(x1, yBot);
     ctx.stroke();
 
-    // Update & draw flowing blood particles
     const speedScale = (physState === 'healthy' ? 0.0022 : (physState === 'slivers' ? 0.0007 : 0.0)) * (APP.speed * 2);
     particles.forEach(pt => {
       const parabolic = Math.max(0.12, 1 - pt.v * pt.v);
@@ -197,7 +193,6 @@
       ctx.fill();
     });
 
-    // Annotations
     ctx.font = `700 ${13*dpr}px system-ui, sans-serif`;
     ctx.fillStyle = '#e2e8f0';
     ctx.fillText('INLET (Blood Enters)', x0, yTop - 14 * dpr);
@@ -234,12 +229,13 @@
       document.getElementById('st-scan-controls').classList.toggle('hidden', m !== 'scan');
       document.getElementById('st-phys-controls').classList.toggle('hidden', m !== 'physics');
       c2d.style.display = (m === 'physics') ? 'block' : 'none';
-      document.querySelector('.cam-bar').style.display = (m === 'physics') ? 'none' : 'flex';
+      APP.syncDockSlice({ visible: false });
       grp.visible = (m === 'scan');
+      APP.setFigure(m === 'scan' ? 'fig1-anatomy' : 'fig2-quality');
       APP.resetCamera();
       document.getElementById('hud-left').textContent = (m === 'scan')
-        ? 'Shared Input: Raw STL Wall (ID 1) + 11 Named Caps (IDs 2–12)'
-        : 'Why Quality Matters: Filled 2D Artery Mesh + Flowing Blood Simulation';
+        ? 'Fig. 1: Segmented AAA Wall (161,944 tris) + 11 Named Open Caps'
+        : 'Fig. 2: Element Shape & Stability — Why Solvers Reject Slivers & Inverted Cells';
     },
     setPhys(state) {
       physState = state;
@@ -249,17 +245,17 @@
       const copy = document.getElementById('st-phys-copy');
       const pill = document.getElementById('st-phys-pill');
       if (state === 'healthy') {
-        copy.innerHTML = 'Plump core triangles + clean thin wall layers let the solver compute smooth blood speed and accurate <b>Wall Shear Stress</b>.';
+        copy.innerHTML = 'Well-proportioned core cells and thin boundary layers allow accurate velocity gradients and reliable <b>Wall Shear Stress</b>.';
         pill.textContent = 'CONVERGED';
-        pill.style.background = 'rgba(52,211,153,0.2)'; pill.style.color = '#34d399';
+        pill.style.background = 'rgba(15,118,110,0.18)'; pill.style.color = 'var(--green)';
       } else if (state === 'slivers') {
-        copy.innerHTML = 'Squished needle cells have almost zero area/volume. Because CFD divides by element volume, roundoff errors blow up and stall convergence.';
-        pill.textContent = 'STALLED (Gamma ≈ 0)';
-        pill.style.background = 'rgba(250,204,21,0.2)'; pill.style.color = '#facc15';
+        copy.innerHTML = 'Flat needle-like cells approach zero volume. Dividing fluxes by tiny element volumes amplifies roundoff error and stalls convergence.';
+        pill.textContent = 'STALLED (γ ≈ 0)';
+        pill.style.background = 'rgba(180,83,9,0.18)'; pill.style.color = 'var(--gold)';
       } else {
-        copy.innerHTML = 'Two wall edges crossed over each other like a bowtie! An inside-out cell has <b>negative mathematical volume</b>, crashing finite-element solvers instantly.';
-        pill.textContent = 'CFD CRASH! (minSICN < 0)';
-        pill.style.background = 'rgba(251,113,133,0.2)'; pill.style.color = '#fb7185';
+        copy.innerHTML = 'When edges cross over like a bowtie, the Jacobian turns negative—producing <b>negative mathematical volume</b> that halts finite-element solvers.';
+        pill.textContent = 'SOLVER CRASH (minSICN < 0)';
+        pill.style.background = 'rgba(220,38,38,0.18)'; pill.style.color = 'var(--red)';
       }
     },
     syncScan() {
@@ -273,17 +269,18 @@
     focusCap(idx) {
       if (!APP.D) return;
       const c = APP.D.capLabels[idx];
-      document.querySelectorAll('.cap-chip').forEach((el, i) => el.classList.toggle('active', i === idx));
+      document.querySelectorAll('#st-scan-controls .cap-chip').forEach((el, i) => el.classList.toggle('active', i === idx));
       highlightRing.visible = true; highlightRing.position.set(...c.p);
-      APP.controls.target.set(...c.p);
-      APP.camera.position.set(c.p[0]+2.5, c.p[1]+1.8, c.p[2]+4.0);
+      const wp = APP.toWorld(...c.p, grp);
+      APP.controls.target.copy(wp);
+      APP.camera.position.set(wp.x+2.5, wp.y+1.8, wp.z+4.0);
       APP.controls.update();
       document.getElementById('hud-left').textContent = `Cap #${idx+1}/11: ${c.name}`;
     },
     onEnter() { this.setSub(subMode); },
     onExit() {
       c2d.style.display = 'none';
-      document.querySelector('.cam-bar').style.display = 'flex';
+      
     },
     update(now) {
       if (subMode === 'physics') drawPhysics2D(now);

@@ -8,7 +8,7 @@
   grp.add(gB1, gB2, gB3);
 
   let pathLines = [], contourGroups = [], selectedVessel = null;
-  let b2System = null, b2CutIdx = 38, b2Sweeping = false, b2Dir = -1, b2Last = 0;
+  let b2System = null, b2CutIdx = 190, b2Sweeping = false, b2Dir = -1, b2Last = 0;
   let b3System = null, b3CutIdx = 38, b3Sweeping = false, b3Dir = -1, b3Last = 0;
   const b2ClipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 9999);
   const b3ClipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 9999);
@@ -95,7 +95,6 @@
       let rawRings = sc.rings.map(rFlat => toVecs(rFlat));
       if (rawRings.length < 2) return;
 
-      // Trim deep interior stubs (< 55% aorta radius) AND anchor short-starting branches (like r_iliac) right into the wall!
       if (sc.id !== 'aorta' && aortaRingsInfo.length) {
         const deepFlag = rawRings.map(pts => {
           const { info, dist } = nearestAorta(centroid(pts));
@@ -104,7 +103,6 @@
         rawRings = rawRings.filter((_, idx) => !deepFlag[idx]);
         if (rawRings.length < 2) return;
 
-        // Check which end attaches to the aorta wall; if it stops outside, tuck 1 anchor ring into the aorta wall
         const c0 = centroid(rawRings[0]), cL = centroid(rawRings[rawRings.length - 1]);
         const n0 = nearestAorta(c0), nL = nearestAorta(cL);
         const attachStart = n0.dist <= nL.dist;
@@ -327,32 +325,33 @@
     const vChips = D ? D.svPaths.map((sp, i) =>
       `<button class="cap-chip" onclick="APP.modules.branchB.highlightVessel(${i})">${sp.name}</button>`
     ).join('') : '';
+    const hexLabel = (DHEX && DHEX.meta && DHEX.meta.hexCount) ? DHEX.meta.hexCount.toLocaleString() : '28,328';
 
     document.getElementById('panel-branchB').innerHTML = `
-      <div class="kicker green">Branch B &bull; Zhang et al. (2007) Paradigm</div>
-      <div class="title">Structured All-Hex O-Grid &amp; Branching</div>
+      <div class="kicker green">Chapter 3 &bull; Approach B (Zhang et al., 2007)</div>
+      <div class="title">Skeleton-Guided Structured All-Hexahedral Meshing</div>
       <div class="badge-note">
-        <b>10-Vessel All-Hex Prototype (0039_H_ABAO_AAA):</b> B1&ndash;B2 show centerline sweeping intuition; <b>B3</b> loads your real <b>${DHEX ? DHEX.meta.hexCount.toLocaleString() : '28,328'}-hex</b> prototype built piecewise from .ctgr rings (0 inverted, minSICN +0.0402, minSIGE mean 0.8543 &mdash; not full automatic C++ NURBS/trifurcation from raw STL).
+        <b>Engineering Scope:</b> Unlike Approach A's single-click raw-STL workflow, full automated NURBS skeleton-to-hex meshing from arbitrary raw STLs remains complex. <b>Fig. 7</b> illustrates the cross-sectional O-grid concept, and <b>Fig. 8</b> loads a working <b>${hexLabel}-hexahedron</b> prototype constructed piecewise from segmented lumen contours.
       </div>
       <div class="card">
-        <div class="sec-lbl">Sequential Branch B Steps</div>
+        <div class="sec-lbl">Approach B Pipeline Stages</div>
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <button class="btn active" id="bb-s-b1" onclick="APP.modules.branchB.setStage('b1')">B1. 10 Real Centerlines &amp; 259 Lumen Contours</button>
-          <button class="btn" id="bb-s-b2" onclick="APP.modules.branchB.setStage('b2')">B2. Lofted NURBS Skin + Synthetic O-Grid Intuition</button>
-          <button class="btn" id="bb-s-b3" onclick="APP.modules.branchB.setStage('b3')">B3. Real All-Hex Prototype (28,328 Hexes, 0 Inverted)</button>
+          <button class="btn active" id="bb-s-b1" onclick="APP.modules.branchB.setStage('b1')">Fig. 6: Centerline Skeleton &amp; 259 Contours</button>
+          <button class="btn" id="bb-s-b2" onclick="APP.modules.branchB.setStage('b2')">Fig. 7: Conceptual O-Grid Cross-Section</button>
+          <button class="btn" id="bb-s-b3" onclick="APP.modules.branchB.setStage('b3')">Fig. 8: Implemented 10-Vessel All-Hex Mesh</button>
         </div>
       </div>
 
       <div id="bb-ctrl-b1">
         <div class="card">
-          <div class="sec-lbl">Real SimVascular Paths &amp; Contours</div>
+          <div class="sec-lbl">SimVascular Centerlines &amp; Contours</div>
           <div class="row">
             <label><input type="checkbox" id="bb-show-paths" checked onchange="APP.modules.branchB.syncB1()" /> 10 Centerlines</label>
             <label><input type="checkbox" id="bb-show-rings" checked onchange="APP.modules.branchB.syncB1()" /> 259 Lumen Contours</label>
           </div>
           <div class="row" style="margin-top:6px;">
             <button class="btn" id="bb-play-btn" onclick="APP.modules.branchB.togglePlay()">Pause</button>
-            <span style="font-size:11.5px;color:var(--gold);font-weight:700;">Sweep Along Aorta</span>
+            <span style="font-size:11.5px;color:var(--green);font-weight:700;">Sweep Along Aorta</span>
           </div>
           ${APP.stepperHtml('bb-b1', 'green')}
           ${APP.speedHtml()}
@@ -363,7 +362,7 @@
 
       <div id="bb-ctrl-b2" class="hidden">
         <div class="card">
-          <div class="sec-lbl">72-Slice O-Grid Brick Cutaway (Click or Hold)</div>
+          <div class="sec-lbl">Fig. 7: Conceptual O-Grid Intuition (72 Slices)</div>
           <div class="row">
             <label><input type="checkbox" id="bb-cut-on" checked onchange="APP.modules.branchB.syncB2()" /> Enable Cross-Section</label>
             <button class="btn" id="bb-sweep-btn" onclick="APP.modules.branchB.toggleSweep()">Auto-Sweep</button>
@@ -371,14 +370,14 @@
           ${APP.stepperHtml('bb-b2', 'green')}
           ${APP.speedHtml()}
           <p class="copy" style="font-size:12px;margin-top:8px;">
-            Shows the idealized <b>square O-grid brick core</b> surrounded by concentric brick rings flush with the lofted quad skin.
+            An O-grid places a <b>4-sided square brick core</b> inside concentric wall rings. Unlike polar grids, corners stay near 90&deg; with no radial centerline pinching. <i>(Lofted from lumen contours for visual intuition.)</i>
           </p>
         </div>
       </div>
 
       <div id="bb-ctrl-b3" class="hidden">
         <div class="card">
-          <div class="sec-lbl">Real 28,328-Hex Mesh &amp; 72-Slice Cutaway (Click or Hold)</div>
+          <div class="sec-lbl">Fig. 8: Real ${hexLabel}-Hex Mesh (72 Slices)</div>
           <div class="row">
             <label><input type="checkbox" id="bb-b3-cut-on" checked onchange="APP.modules.branchB.syncB3()" /> Enable Cross-Section</label>
             <button class="btn" id="bb-b3-sweep-btn" onclick="APP.modules.branchB.toggleSweepB3()">Auto-Sweep</button>
@@ -390,14 +389,18 @@
             <label><input type="checkbox" id="bb-b3-wire" checked onchange="APP.modules.branchB.syncB3()" /> Outer Quad Grid</label>
           </div>
           <p class="copy" style="font-size:12px;margin-top:8px;">
-            <b>aaa_zhang_multibranch_hex.msh</b>: 28,328 hexahedra across 10 vessels, 8,416 wall quads (9,024 w/ caps), O-grid trunk (<i>Aorta_LeftIliac</i>) + conformal wall-window branches + Smart-Laplacian untangling.<br/>
-            <b>Quality:</b> 0 inverted hexes &bull; minSICN min = <b>+0.0402</b> &bull; minSIGE mean = <b>0.8543</b>.
+            <b>aaa_zhang_multibranch_hex.msh</b>: ${hexLabel} hexahedra across 10 vessels, 8,416 wall quads (9,024 w/ caps), O-grid trunk (<i>Aorta_LeftIliac</i>) + conformal wall-window branches + Smart-Laplacian untangling.<br/>
+            <b>Quality:</b> 0 inverted hexes &bull; minSICN = <b>+0.0402</b> &bull; minSIGE mean = <b>0.8543</b>.
           </p>
         </div>
       </div>
+
+      <button class="btn next-chapter-btn" onclick="APP.goTab('compare')">
+        <span>Next: Side-by-Side Comparison (A vs. B)</span>
+        <span>&rarr;</span>
+      </button>
     `;
 
-    // Bind B1 click-or-hold
     const setB1Manual = (v) => {
       b1Play = false;
       document.getElementById('bb-play-btn').textContent = 'Play';
@@ -415,18 +418,16 @@
       onHoldDelta: (d) => setB1Manual(b1Prog + d)
     });
 
-    // Bind B2 click-or-hold
     const stepB2 = (delta) => {
       b2Sweeping = false;
       document.getElementById('bb-sweep-btn').textContent = 'Auto-Sweep';
       document.getElementById('bb-cut-on').checked = true;
-      b2CutIdx = Math.max(0, Math.min(71, b2CutIdx + delta));
+      b2CutIdx = Math.max(0, Math.min(359, b2CutIdx + delta));
       APP.modules.branchB.syncB2();
     };
-    APP.bindHoldButton('bb-b2-prev', { ratePerSec: 20, onStep: (n) => stepB2(-n) });
-    APP.bindHoldButton('bb-b2-next', { ratePerSec: 20, onStep: (n) => stepB2(n) });
+    APP.bindHoldButton('bb-b2-prev', { ratePerSec: 28, onStep: (n) => stepB2(-n) });
+    APP.bindHoldButton('bb-b2-next', { ratePerSec: 28, onStep: (n) => stepB2(n) });
 
-    // Bind B3 click-or-hold
     const stepB3 = (delta) => {
       b3Sweeping = false;
       document.getElementById('bb-b3-sweep-btn').textContent = 'Auto-Sweep';
@@ -434,8 +435,8 @@
       b3CutIdx = Math.max(0, Math.min(71, b3CutIdx + delta));
       APP.modules.branchB.syncB3();
     };
-    APP.bindHoldButton('bb-b3-prev', { ratePerSec: 20, onStep: (n) => stepB3(-n) });
-    APP.bindHoldButton('bb-b3-next', { ratePerSec: 20, onStep: (n) => stepB3(n) });
+    APP.bindHoldButton('bb-b3-prev', { ratePerSec: 7, onStep: (n) => stepB3(-n) });
+    APP.bindHoldButton('bb-b3-next', { ratePerSec: 7, onStep: (n) => stepB3(n) });
   }
 
   function init3D() {
@@ -496,12 +497,14 @@
       ['b1','b2','b3'].forEach(k => document.getElementById('bb-s-'+k).classList.toggle('active', k===s));
       ['b1','b2','b3'].forEach(k => document.getElementById('bb-ctrl-'+k).classList.toggle('hidden', k!==s));
       gB1.visible = (s==='b1'); gB2.visible = (s==='b2'); gB3.visible = (s==='b3');
+      const figMap = { b1: 'fig6-skeleton', b2: 'fig7-ogrid', b3: 'fig8-allhex' };
+      APP.setFigure(figMap[s] || 'fig6-skeleton');
       this.syncB1(); this.syncB2(); this.syncB3();
       APP.resetCamera();
       const labels = {
-        b1: 'Branch B1: Real 10-Vessel Centerlines & 259 Contours on AAA',
-        b2: 'Branch B2: Lofted NURBS Skin + Synthetic O-Grid Brick Slice',
-        b3: 'Branch B3: Real Zhang-Style All-Hex Prototype (28,328 Hexes, 0 Inverted)'
+        b1: 'Fig. 6: 10 Vessel Centerlines & 259 SimVascular Lumen Contours',
+        b2: 'Fig. 7: Conceptual Contour-Lofted O-Grid Cross-Section',
+        b3: 'Fig. 8: Implemented 10-Vessel All-Hex Prototype (28,328 Hexes, 0 Inverted)'
       };
       document.getElementById('hud-left').textContent = labels[s] || '';
     },
@@ -513,18 +516,19 @@
     syncB2() {
       if (!APP.D || !b2System) return;
       const on = document.getElementById('bb-cut-on').checked;
-      const cutY = APP.D.meta.cuts[b2CutIdx];
-      b2ClipPlane.constant = on ? cutY : 9999;
+      const cuts = APP.D.meta.cuts, yMin = cuts[0], yMax = cuts[cuts.length - 1];
+      const cutY = yMin + (b2CutIdx / 359) * (yMax - yMin);
+      APP.setClipPlane(b2ClipPlane, cutY, on);
       b2System.updateCut(cutY, on);
       const lbl = document.getElementById('bb-b2-lbl'), bar = document.getElementById('bb-b2-bar');
-      if (lbl) lbl.textContent = `Slice ${b2CutIdx + 1} / 72 (y=${cutY.toFixed(1)})`;
-      if (bar) bar.style.width = `${((b2CutIdx / 71) * 100).toFixed(1)}%`;
+      if (lbl) lbl.textContent = `Slice ${b2CutIdx + 1} / 360 (y=${cutY.toFixed(2)})`;
+      if (bar) bar.style.width = `${((b2CutIdx / 359) * 100).toFixed(1)}%`;
     },
     syncB3() {
       if (!APP.D || !b3System) return;
       const on = document.getElementById('bb-b3-cut-on').checked;
       const cutY = APP.D.meta.cuts[b3CutIdx];
-      b3ClipPlane.constant = on ? cutY : 9999;
+      APP.setClipPlane(b3ClipPlane, cutY, on);
       b3System.updateSlice(b3CutIdx, on);
       b3System.setDisplay(
         document.getElementById('bb-b3-skin').checked,
@@ -560,7 +564,7 @@
         b2Last = now;
         b2CutIdx += b2Dir;
         if (b2CutIdx <= 0) { b2CutIdx = 0; b2Dir = 1; }
-        if (b2CutIdx >= 71) { b2CutIdx = 71; b2Dir = -1; }
+        if (b2CutIdx >= 359) { b2CutIdx = 359; b2Dir = -1; }
         this.syncB2();
       }
       if (stage==='b3' && b3Sweeping && APP.D && now - b3Last > (55 / APP.speed)) {

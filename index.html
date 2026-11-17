@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Vascular Meshing Pipeline Explorer — 0039_H_ABAO_AAA</title>
+<title>Vascular Meshing Literature Survey (2026) — 3D Explorer</title>
 <link rel="stylesheet" href="styles.css" />
 <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/controls/OrbitControls.js"></script>
@@ -12,56 +12,136 @@
 </head>
 <body>
 
-<header>
+<header class="top-bar">
   <div class="brand">
-    <h1>Stage 2 Vascular Meshing Explorer</h1>
-    <span>Patient 0039_H_ABAO_AAA &bull; One Medical Scan, Two Rival Meshing Pipelines</span>
+    <h1>Vascular Meshing Literature Survey (2026)</h1>
+    <span>Benchmark: Stanford VMR 0039_H_ABAO_AAA &bull; Authored by Adaeze Ilodianya</span>
   </div>
-  <nav class="fork-nav">
-    <button class="tab-btn active" id="btn-tab-start" onclick="APP.goTab('start')">Start: Raw Scan &amp; Goal</button>
-    <span class="fork-arrow">&rarr;</span>
-    <button class="tab-btn" id="btn-tab-branchA" onclick="APP.goTab('branchA')">Branch A: Marchandise (2010)</button>
-    <button class="tab-btn branch-b" id="btn-tab-branchB" onclick="APP.goTab('branchB')">Branch B: Zhang (2007)</button>
-    <span class="fork-arrow">&rarr;</span>
-    <button class="tab-btn" id="btn-tab-compare" onclick="APP.goTab('compare')">Compare A vs. B</button>
+  <nav class="beat-nav" aria-label="Survey Chapters">
+    <button class="beat-pill active" id="nav-beat-1" onclick="APP.goBeat(1)">1. Problem</button>
+    <button class="beat-pill" id="nav-beat-2" onclick="APP.goBeat(2)">2. Approach A</button>
+    <button class="beat-pill" id="nav-beat-3" onclick="APP.goBeat(3)">3. Approach B</button>
+    <button class="beat-pill" id="nav-beat-4" onclick="APP.goBeat(4)">4. Compare A vs. B</button>
   </nav>
+  <div class="header-tools">
+    <button class="pill-btn" id="btn-sound" onclick="APP.audio.toggle()">Sound: Off</button>
+    <button class="pill-btn" onclick="APP.openModal('welcome-modal')">Guide</button>
+    <button class="pill-btn" onclick="APP.openModal('sources-modal')">Sources</button>
+    <a class="pill-btn" href="https://github.com/DaezeI/Vascular-Meshing-" target="_blank" rel="noopener noreferrer">GitHub &nearr;</a>
+  </div>
 </header>
 
-<main>
-  <aside>
-    <div id="panel-start" class="tab-panel"></div>
-    <div id="panel-branchA" class="tab-panel hidden"></div>
-    <div id="panel-branchB" class="tab-panel hidden"></div>
-    <div id="panel-compare" class="tab-panel hidden"></div>
-  </aside>
-
-  <div id="viewport-wrap">
+<main id="stage-shell">
+  <div id="spatial-backdrop">
     <canvas id="canvas3d"></canvas>
-    <div class="cam-bar">
-      <div class="cam-group">
-        <button class="btn" onclick="APP.setCameraPreset('front')">Front</button>
-        <button class="btn" onclick="APP.setCameraPreset('side')">Side</button>
-        <button class="btn" onclick="APP.setCameraPreset('topcut')">Top Cutaway</button>
-        <button class="btn" onclick="APP.resetCamera()">Reset View</button>
-        <button class="btn" id="btn-save-cam" onclick="APP.savePreferredCamera()">Set Current as Default</button>
-      </div>
-      <div class="hud-tip">Drag: Orbit &bull; Scroll: Zoom &bull; Right-Drag: Pan</div>
+    <div class="beat4-divider hidden" id="beat4-divider"></div>
+    <div class="beat4-labels hidden" id="beat4-labels">
+      <span class="beat4-tag" style="color:#fbbf24;">Approach A: Marchandise (125.9k Prisms + 69k Tets, 10 Inverted)</span>
+      <span class="beat4-tag" style="color:#34d399;">Approach B: Zhang Prototype (28,328 All-Hex, 0 Inverted)</span>
     </div>
+  </div>
 
-    <div class="split-overlay hidden" id="split-overlay">
-      <div class="split-tag" style="color:var(--accent);">Branch A: Marchandise (Unstructured Prisms + Tets)</div>
-      <div class="split-divider"></div>
-      <div class="split-tag" style="color:var(--green);">Branch B: Zhang Prototype (28,328 All-Hex, 0 Inverted)</div>
-    </div>
-
-    <div class="hud-bottom">
-      <div id="hud-left">Loading AAA geometry...</div>
-      <div id="hud-stats" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-    </div>
+  <div id="scroll-story">
+    <section class="beat beat-left" id="beat-1" data-beat="1"><div class="glass-card" id="panel-start"></div></section>
+    <section class="beat beat-right" id="beat-2" data-beat="2"><div class="glass-card" id="panel-branchA"></div></section>
+    <section class="beat beat-left" id="beat-3" data-beat="3"><div class="glass-card" id="panel-branchB"></div></section>
+    <section class="beat beat-compare" id="beat-4" data-beat="4"><div class="glass-card compare-card" id="panel-compare"></div></section>
   </div>
 </main>
 
+<footer id="bottom-dock" class="bottom-dock">
+  <div class="dock-popover hidden" id="dock-popover">
+    <div class="pop-sec">
+      <div class="pop-lbl">Playback &amp; Step Speed</div>
+      <div id="dock-speed-mount"></div>
+    </div>
+    <div class="pop-sec">
+      <div class="pop-lbl" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Fine Model Pose (Arrows / Shift+Arrows)</span>
+        <button class="pill-btn" onclick="APP.resetPose()">Reset</button>
+      </div>
+      <label class="pose-row"><span>Move X</span><input type="range" id="pose-px" min="-16" max="16" step="0.2" value="0" oninput="APP.syncPoseFromUI()" /></label>
+      <label class="pose-row"><span>Move Y</span><input type="range" id="pose-py" min="-16" max="16" step="0.2" value="0" oninput="APP.syncPoseFromUI()" /></label>
+      <label class="pose-row"><span>Tilt X</span><input type="range" id="pose-rx" min="-180" max="180" step="2" value="0" oninput="APP.syncPoseFromUI()" /></label>
+      <label class="pose-row"><span>Spin Y</span><input type="range" id="pose-ry" min="-180" max="180" step="2" value="0" oninput="APP.syncPoseFromUI()" /></label>
+      <label class="pose-row"><span>Roll Z</span><input type="range" id="pose-rz" min="-180" max="180" step="2" value="0" oninput="APP.syncPoseFromUI()" /></label>
+    </div>
+  </div>
+
+  <div class="dock-row">
+    <span class="fig-badge" id="fig-badge">Fig. 1</span>
+    <span id="hud-left" class="dock-caption">Loading AAA geometry...</span>
+    <div id="hud-stats" class="dock-stats"></div>
+    <button class="pill-btn" id="btn-copy-fig" onclick="APP.copyFigureLink()">Copy Link</button>
+  </div>
+
+  <div class="dock-row">
+    <div class="dock-slice hidden" id="dock-slice-wrap">
+      <span id="dock-slice-lbl" class="mono-num">Slice 39/72</span>
+      <input type="range" id="dock-slice-range" min="0" max="71" value="38" oninput="APP.onDockSliceInput(this.value)" />
+      <button class="pill-btn" id="dock-sweep-btn" onclick="APP.onDockSweepToggle()">Auto-Sweep</button>
+    </div>
+    <div class="dock-btns">
+      <button class="pill-btn" onclick="APP.setCameraPreset('front')">Front</button>
+      <button class="pill-btn" onclick="APP.setCameraPreset('side')">Side</button>
+      <button class="pill-btn" onclick="APP.setCameraPreset('topcut')">Top Cut</button>
+      <button class="pill-btn" onclick="APP.zoomBy(0.84)" title="Zoom In (or Pinch / Ctrl+Scroll)">Zoom +</button><button class="pill-btn" onclick="APP.zoomBy(1.19)" title="Zoom Out">Zoom &minus;</button><button class="pill-btn" onclick="APP.resetCamera()">Reset</button><button class="pill-btn hidden" id="btn-scroll-sync" onclick="APP.resumeScrollSync()">Sync Scroll</button>
+      <button class="pill-btn" id="btn-mouse-mode" onclick="APP.toggleMouseMode()">Mouse: Orbit</button>
+      <button class="pill-btn" id="btn-more-tools" onclick="APP.toggleDockPopover()">Speed &amp; Pose</button>
+    </div>
+  </div>
+</footer>
+
+<div class="modal-backdrop hidden" id="welcome-modal" role="dialog" aria-modal="true">
+  <div class="glass-modal">
+    <div class="modal-head">
+      <div><div class="kicker">30-Second Story Guide</div><h2>How Do We Turn a Medical Scan Into a Blood-Flow Grid?</h2></div>
+      <button class="modal-close" onclick="APP.dismissWelcome()">&times;</button>
+    </div>
+    <p class="modal-lead">A segmented CT scan gives clinicians a <b>hollow triangle shell</b> of a patient's arteries. To simulate blood flow and wall stress, engineers must fill that interior volume with a valid 3D mesh.</p>
+    <div class="pipeline-strip">
+      <div class="pipe-step"><span class="pipe-num">Step 1</span><strong>CT Segmentation</strong><small>Medical scan &rarr; STL</small></div>
+      <div class="pipe-arrow">&rarr;</div>
+      <div class="pipe-step active"><span class="pipe-num">Step 2 &bull; This Survey</span><strong>Volumetric Meshing</strong><small>Hollow shell &rarr; 3D grid</small></div>
+      <div class="pipe-arrow">&rarr;</div>
+      <div class="pipe-step"><span class="pipe-num">Step 3</span><strong>CFD / FSI Solver</strong><small>Flow &amp; wall stress</small></div>
+    </div>
+    <p class="modal-lead" style="margin-bottom:14px;">Use the top navigation to step between <b>Approach A</b> (Marchandise, 2010) and <b>Approach B</b> (Zhang, 2007), then inspect both side-by-side in <b>4. Compare A vs. B</b>.</p>
+    <div class="modal-actions">
+      <button class="pill-btn" onclick="APP.dismissWelcome()">Skip</button>
+      <button class="pill-btn pill-primary" onclick="APP.startGuidedTour()">Start Tour (Fig. 1) &rarr;</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="sources-modal" role="dialog" aria-modal="true">
+  <div class="glass-modal modal-wide">
+    <div class="modal-head">
+      <div><div class="kicker">Methodology, Citations &amp; Glossary</div><h2>Sources &amp; Quality Metrics</h2></div>
+      <button class="modal-close" onclick="APP.closeModal('sources-modal')">&times;</button>
+    </div>
+    <div class="glossary-grid">
+      <div class="glossary-item"><strong>2D Gamma (&gamma; &isin; [0,1])</strong><p>Triangle regularity. Near 1.0 is equilateral; near 0 is a flat sliver.</p></div>
+      <div class="glossary-item"><strong>minSICN (&le; 1)</strong><p>Jacobian orientation. Any value &le; 0 is an inverted cell that halts FE/CFD solvers.</p></div>
+      <div class="glossary-item"><strong>minSIGE (&le; 1)</strong><p>Solution gradient fidelity for wall shear stress; closer to 1.0 is cleaner.</p></div>
+    </div>
+    <ol class="ref-list">
+      <li><b>[1]</b> Marchandise, E. et al. (2010). <i>Quality meshing based on STL triangulations for biomedical simulations</i>. Int. J. Numer. Meth. Biomed. Engng., 26(7), 876&ndash;889.</li>
+      <li><b>[2]</b> Remacle, J.-F. et al. (2010). <i>High-quality surface remeshing using harmonic maps</i>. Int. J. Numer. Meth. Engng., 83(4), 403&ndash;425.</li>
+      <li><b>[3]</b> Zhang, Y., Bazilevs, Y., Goswami, S., Bajaj, C. L., &amp; Hughes, T. J. R. (2007). <i>Patient-specific vascular NURBS modeling for isogeometric analysis of blood flow</i>. CMAME, 196(29&ndash;30), 2943&ndash;2959.</li>
+      <li><b>[4]</b> Wilson, N. M. et al. (2013). <i>The Vascular Model Repository</i>. J. Med. Devices, 7(4), 040923 (Case <code>0039_H_ABAO_AAA</code>).</li>
+      <li><b>[5]</b> Updegrove, A. et al. (2017). <i>SimVascular: An open source pipeline for cardiovascular simulation</i>. Ann. Biomed. Eng., 45(3), 525&ndash;541.</li>
+      <li><b>[6]</b> Geuzaine, C., &amp; Remacle, J.-F. (2009). <i>Gmsh: A 3-D finite element mesh generator</i>. Int. J. Numer. Meth. Engng., 79(11), 1309&ndash;1331.</li>
+    </ol>
+    <p class="modal-note">Authored by <b>Adaeze Ilodianya</b> (2026). Approach A meshes were generated from the benchmark STL in Gmsh; Approach B's 28,328-hex prototype was built piecewise from SimVascular <code>.ctgr</code> contours.</p>
+    <div class="modal-actions">
+      <button class="pill-btn pill-primary" onclick="APP.closeModal('sources-modal')">Done</button>
+    </div>
+  </div>
+</div>
+
 <script src="js/main.js"></script>
+<script src="js/audio.js"></script>
 <script src="js/tabStart.js"></script>
 <script src="js/tabBranchA.js"></script>
 <script src="js/tabBranchB.js"></script>

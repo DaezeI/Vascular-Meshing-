@@ -16,27 +16,27 @@
 
   function buildPanel() {
     document.getElementById('panel-branchA').innerHTML = `
-      <div class="kicker">Branch A &bull; Marchandise et al. (2010)</div>
-      <div class="title">Unstructured Remeshing + Hybrid Prisms &amp; Tets</div>
+      <div class="kicker">Chapter 2 &bull; Approach A (Marchandise et al., 2010)</div>
+      <div class="title">Unstructured Harmonic Remeshing + Hybrid Prisms &amp; Tets</div>
       <div class="badge-note impl">
-        <b>Implemented in Gmsh:</b> These are your actual meshes generated from <code>0039_H_ABAO_AAA</code>.
+        <b>Implemented Benchmark (Gmsh):</b> Generated directly from the <code>0039_H_ABAO_AAA</code> surface STL using harmonic surface parameterization and Delaunay volume filling.
       </div>
       <div class="card">
-        <div class="sec-lbl">Sequential Branch A Steps</div>
+        <div class="sec-lbl">Approach A Pipeline Stages</div>
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <button class="btn active" id="ba-s-a1" onclick="APP.modules.branchA.setStage('a1')">A1. Peel, Clean &amp; Wrap Surface (69 Patches)</button>
-          <button class="btn" id="ba-s-a2" onclick="APP.modules.branchA.setStage('a2')">A2. Fill Option 1: Closed Tets Only (73,842 Tets)</button>
-          <button class="btn" id="ba-s-a3" onclick="APP.modules.branchA.setStage('a3')">A3. Fill Option 2: Uncapped 5-Layer Prisms + Core</button>
+          <button class="btn active" id="ba-s-a1" onclick="APP.modules.branchA.setStage('a1')">Fig. 3: Harmonic Surface Remeshing (69 Patches)</button>
+          <button class="btn" id="ba-s-a2" onclick="APP.modules.branchA.setStage('a2')">Fig. 4: Isotropic Tet Core Only (73,842 Tets)</button>
+          <button class="btn" id="ba-s-a3" onclick="APP.modules.branchA.setStage('a3')">Fig. 5: 5-Layer Boundary Prisms + Core</button>
         </div>
       </div>
 
       <div id="ba-ctrl-a1">
         <div class="card">
-          <div class="sec-lbl">A1 View Mode</div>
+          <div class="sec-lbl">Fig. 3 Inspection Mode</div>
           <div class="row">
-            <button class="btn active" id="ba-a1-anim" onclick="APP.modules.branchA.setA1Sub('anim')">Real Patch Unwrap</button>
+            <button class="btn active" id="ba-a1-anim" onclick="APP.modules.branchA.setA1Sub('anim')">Patch Unwrap</button>
             <button class="btn" id="ba-a1-patches" onclick="APP.modules.branchA.setA1Sub('patches')">69 Patches</button>
-            <button class="btn" id="ba-a1-gamma" onclick="APP.modules.branchA.setA1Sub('gamma')">2D Gamma</button>
+            <button class="btn" id="ba-a1-gamma" onclick="APP.modules.branchA.setA1Sub('gamma')">2D Gamma (&gamma;)</button>
           </div>
           <div id="ba-a1-animbox" style="margin-top:8px;">
             <div class="row">
@@ -47,7 +47,7 @@
             ${APP.speedHtml()}
           </div>
           <p class="copy" style="font-size:12px;margin-top:8px;">
-            <b>Result:</b> Cut surface triangles by <b>84%</b> (161.9k &rarr; 25.6k) and boosted mean 2D Gamma from <b>0.656 &rarr; 0.927</b>.
+            <b>Result:</b> Harmonic disk mapping reduced surface triangles by <b>84%</b> (161.9k &rarr; 25.6k) and raised mean 2D Gamma (&gamma;) from <b>0.656 &rarr; 0.927</b>.
           </p>
         </div>
       </div>
@@ -63,9 +63,9 @@
           ${APP.speedHtml()}
         </div>
         <div class="card hidden" id="ba-bad-card">
-          <div class="sec-lbl">10 Inverted Prisms (minSICN &le; 0)</div>
+          <div class="sec-lbl">Bottleneck: 10 Inverted Prisms (minSICN &le; 0)</div>
           <p class="copy" style="font-size:12px;margin-top:0;margin-bottom:8px;">
-            Pushing 5 rigid layers inward folded <b>10</b> of 125,885 prisms inside-out at tight branch collars.
+            Extruding 5 rigid prism layers inward caused self-intersection at tight bifurcation collars—inverting <b>10</b> of 125,885 prisms (<code>minSICN = -0.1126</code>).
           </p>
           <div class="row">
             <label><input type="checkbox" id="ba-bad-on" checked onchange="APP.modules.branchA.syncBad()" /> Show Red Markers</label>
@@ -74,14 +74,18 @@
         </div>
         <div class="card">
           <div class="sec-lbl">Legend</div>
-          <div class="legend-item"><span class="swatch" style="background:#facc15"></span> 5 Boundary-Layer Prism Rings (Option 2 only)</div>
+          <div class="legend-item"><span class="swatch" style="background:#facc15"></span> 5 Boundary-Layer Prism Rings (Fig. 5 only)</div>
           <div class="legend-item"><span class="swatch" style="background:#a855f7"></span> Tetrahedral Core Volume</div>
           <div class="legend-item"><span class="swatch" style="background:#ff1e42"></span> Inverted Prisms (minSICN = -0.1126)</div>
         </div>
       </div>
+
+      <button class="btn next-chapter-btn" onclick="APP.goTab('branchB')">
+        <span>Next: Approach B (Structured All-Hex)</span>
+        <span>&rarr;</span>
+      </button>
     `;
 
-    // Bind click-or-hold steppers
     const setA1Manual = (nextVal) => {
       a1Play = false;
       document.getElementById('ba-play-btn').textContent = 'Play';
@@ -106,8 +110,8 @@
       cutIdx = Math.max(0, Math.min(71, cutIdx + delta));
       APP.modules.branchA.syncCut();
     };
-    APP.bindHoldButton('ba-cut-prev', { ratePerSec: 20, onStep: (n) => stepCut(-n) });
-    APP.bindHoldButton('ba-cut-next', { ratePerSec: 20, onStep: (n) => stepCut(n) });
+    APP.bindHoldButton('ba-cut-prev', { ratePerSec: 7, onStep: (n) => stepCut(-n) });
+    APP.bindHoldButton('ba-cut-next', { ratePerSec: 7, onStep: (n) => stepCut(n) });
   }
 
   function hsl(h, s, l) {
@@ -199,7 +203,7 @@
     const rp = APP.D.realPatch, [pcx, pcy, pcz] = rp.center, sc = rp.scale, dZ = pcz + sc*2.15;
     const lbl = document.getElementById('ba-phase');
     let b3 = 0, cl = 0;
-    if (p < 0.36) { b3 = 1 - APP.smoothstep(p/0.36); cl = 0; lbl.textContent = '1. Peel Real Patch to 2D Disk'; }
+    if (p < 0.36) { b3 = 1 - APP.smoothstep(p/0.36); cl = 0; lbl.textContent = '1. Peel Patch to 2D Disk'; }
     else if (p < 0.64) { b3 = 0; cl = APP.smoothstep((p-0.36)/0.28); lbl.textContent = '2. Relax Triangles in 2D'; }
     else { b3 = APP.smoothstep((p-0.64)/0.36); cl = 1; lbl.textContent = '3. Wrap Clean Patch Back'; }
 
@@ -230,9 +234,11 @@
       document.getElementById('ba-ctrl-a1').classList.toggle('hidden', s!=='a1');
       document.getElementById('ba-ctrl-vol').classList.toggle('hidden', s==='a1');
       document.getElementById('ba-bad-card').classList.toggle('hidden', s!=='a3');
-      if (s === 'a1') { this.setA1Sub(a1Sub); document.getElementById('hud-left').textContent = 'Branch A1: Marchandise (2010) 2D Harmonic Surface Remeshing'; }
-      if (s === 'a2') { this.syncCut(); APP.resetCamera(); document.getElementById('hud-left').textContent = 'Branch A2: Closed Tetrahedral Volume Mesh (73,842 Tets)'; }
-      if (s === 'a3') { this.syncCut(); this.syncBad(); APP.resetCamera(); document.getElementById('hud-left').textContent = 'Branch A3: Hybrid 5-Layer Prisms + Tet Core + 10 Inverted Prisms'; }
+      const figMap = { a1: 'fig3-harmonic', a2: 'fig4-tet', a3: 'fig5-bl-inversion' };
+      APP.setFigure(figMap[s] || 'fig3-harmonic');
+      if (s === 'a1') { this.setA1Sub(a1Sub); document.getElementById('hud-left').textContent = 'Fig. 3: Marchandise et al. (2010) 2D Harmonic Surface Remeshing'; }
+      if (s === 'a2') { this.syncCut(); APP.resetCamera(); document.getElementById('hud-left').textContent = 'Fig. 4: Isotropic Tetrahedral Core (73,842 Tets, 0 Inverted)'; }
+      if (s === 'a3') { this.syncCut(); this.syncBad(); APP.resetCamera(); document.getElementById('hud-left').textContent = 'Fig. 5: Hybrid 5-Layer Prisms + Tet Core (10 Inverted Prisms)'; }
     },
     setA1Sub(v) {
       a1Sub = v;
@@ -249,7 +255,7 @@
       if (!APP.D) return;
       const on = document.getElementById('ba-cut-on').checked;
       const cutY = APP.D.meta.cuts[cutIdx];
-      APP.clipPlane.constant = on ? cutY : 9999;
+      APP.setClipPlane(APP.clipPlane, cutY, on);
       [...closedSlices, ...blTetSlices, ...blPrismSlices].forEach(m => m.visible = false);
       if (on) {
         if (stage==='a2') closedSlices[cutIdx].visible = true;
@@ -278,8 +284,9 @@
       badCursor = (badCursor + 1) % APP.D.meta.badCenters.length;
       document.getElementById('ba-bad-idx').textContent = badCursor + 1;
       const c = APP.D.meta.badCenters[badCursor];
-      APP.controls.target.set(c[0], c[1], c[2]);
-      APP.camera.position.set(c[0]+1.8, c[1]+1.2, c[2]+2.5);
+      const wp = APP.toWorld(c[0], c[1], c[2]);
+      APP.controls.target.copy(wp);
+      APP.camera.position.set(wp.x+1.8, wp.y+1.2, wp.z+2.5);
       APP.controls.update();
       document.getElementById('hud-left').textContent = `Inverted Prism #${badCursor+1}/10 — minSICN = ${c[3]} (Negative Jacobian!)`;
     },
