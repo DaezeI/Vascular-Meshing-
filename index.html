@@ -1,0 +1,70 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vascular Meshing Pipeline Explorer — 0039_H_ABAO_AAA</title>
+<link rel="stylesheet" href="styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/controls/OrbitControls.js"></script>
+<script src="data/aaa_data.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>Stage 2 Vascular Meshing Explorer</h1>
+    <span>Patient 0039_H_ABAO_AAA &bull; One Medical Scan, Two Rival Meshing Pipelines</span>
+  </div>
+  <nav class="fork-nav">
+    <button class="tab-btn active" id="btn-tab-start" onclick="APP.goTab('start')">Start: Raw Scan &amp; Goal</button>
+    <span class="fork-arrow">&rarr;</span>
+    <button class="tab-btn" id="btn-tab-branchA" onclick="APP.goTab('branchA')">Branch A: Marchandise (2010)</button>
+    <button class="tab-btn branch-b" id="btn-tab-branchB" onclick="APP.goTab('branchB')">Branch B: Zhang (2007)</button>
+    <span class="fork-arrow">&rarr;</span>
+    <button class="tab-btn" id="btn-tab-compare" onclick="APP.goTab('compare')">Compare A vs. B</button>
+  </nav>
+</header>
+
+<main>
+  <aside>
+    <div id="panel-start" class="tab-panel"></div>
+    <div id="panel-branchA" class="tab-panel hidden"></div>
+    <div id="panel-branchB" class="tab-panel hidden"></div>
+    <div id="panel-compare" class="tab-panel hidden"></div>
+  </aside>
+
+  <div id="viewport-wrap">
+    <canvas id="canvas3d"></canvas>
+    <div class="cam-bar">
+      <div class="cam-group">
+        <button class="btn" onclick="APP.setCameraPreset('front')">Front</button>
+        <button class="btn" onclick="APP.setCameraPreset('side')">Side</button>
+        <button class="btn" onclick="APP.setCameraPreset('topcut')">Top Cutaway</button>
+        <button class="btn" onclick="APP.resetCamera()">Reset View</button>
+        <button class="btn" id="btn-save-cam" onclick="APP.savePreferredCamera()">Set Current as Default</button>
+      </div>
+      <div class="hud-tip">Drag: Orbit &bull; Scroll: Zoom &bull; Right-Drag: Pan</div>
+    </div>
+
+    <div class="split-overlay hidden" id="split-overlay">
+      <div class="split-tag" style="color:var(--accent);">Branch A: Marchandise (Unstructured Prisms + Tets)</div>
+      <div class="split-divider"></div>
+      <div class="split-tag" style="color:var(--green);">Branch B: Zhang (Structured Hex Bricks + NURBS)</div>
+    </div>
+
+    <div class="hud-bottom">
+      <div id="hud-left">Loading AAA geometry...</div>
+      <div id="hud-stats" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+    </div>
+  </div>
+</main>
+
+<script src="js/main.js"></script>
+<script src="js/tabStart.js"></script>
+<script src="js/tabBranchA.js"></script>
+<script src="js/tabBranchB.js"></script>
+<script src="js/tabCompare.js"></script>
+<script>APP.init();</script>
+</body>
+</html>
