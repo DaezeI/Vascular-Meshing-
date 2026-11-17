@@ -1,15 +1,17 @@
-﻿(function () {
+(function () {
   const APP = window.APP;
   const grp = APP.groups.branchB;
 
   let stage = 'b1';
   let b1Play = true, b1Prog = 0;
-  let gB1 = new THREE.Group(), gB2 = new THREE.Group();
-  grp.add(gB1, gB2);
+  let gB1 = new THREE.Group(), gB2 = new THREE.Group(), gB3 = new THREE.Group();
+  grp.add(gB1, gB2, gB3);
 
   let pathLines = [], contourGroups = [], selectedVessel = null;
-  let b2System = null, b2Sweeping = false, b2Dir = -1, b2Last = 0;
+  let b2System = null, b2CutIdx = 38, b2Sweeping = false, b2Dir = -1, b2Last = 0;
+  let b3System = null, b3CutIdx = 38, b3Sweeping = false, b3Dir = -1, b3Last = 0;
   const b2ClipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 9999);
+  const b3ClipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 9999);
 
   const PATH_COLORS = [
     0x22d3ee, 0xfacc15, 0x34d399, 0xf472b6, 0x38bdf8,
@@ -263,23 +265,81 @@
     return { group: out, updateCut };
   };
 
+  APP.buildRealZhangHexMesh = function (clipPlaneRef) {
+    const DHEX = window.ZHANG_HEX_DATA;
+    const out = new THREE.Group();
+    if (!DHEX) return { group: out, updateSlice: () => {}, setDisplay: () => {} };
+
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(DHEX.verts, 3));
+    sg.setIndex(DHEX.surfTris);
+    sg.computeVertexNormals();
+    const skinMesh = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({
+      color: 0x10b981, transparent: true, opacity: 0.42, roughness: 0.42,
+      side: THREE.DoubleSide, clippingPlanes: [clipPlaneRef]
+    }));
+    out.add(skinMesh);
+
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(DHEX.verts, 3));
+    wg.setIndex(DHEX.surfEdges);
+    const wireLines = new THREE.LineSegments(wg, new THREE.LineBasicMaterial({
+      color: 0xa7f3d0, transparent: true, opacity: 0.55, clippingPlanes: [clipPlaneRef]
+    }));
+    out.add(wireLines);
+
+    const sliceGroups = DHEX.slices.map(sl => {
+      const sGrp = new THREE.Group();
+      if (sl.fill && sl.fill.length) {
+        const fg = new THREE.BufferGeometry();
+        fg.setAttribute('position', new THREE.Float32BufferAttribute(sl.fill, 3));
+        sGrp.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({
+          color: 0x10b981, transparent: true, opacity: 0.62, side: THREE.DoubleSide
+        })));
+      }
+      if (sl.wire && sl.wire.length) {
+        const eg = new THREE.BufferGeometry();
+        eg.setAttribute('position', new THREE.Float32BufferAttribute(sl.wire, 3));
+        sGrp.add(new THREE.LineSegments(eg, new THREE.LineBasicMaterial({
+          color: 0xfef08a, transparent: true, opacity: 0.92
+        })));
+      }
+      sGrp.visible = false;
+      out.add(sGrp);
+      return sGrp;
+    });
+
+    return {
+      group: out,
+      updateSlice(idx, enabled) {
+        sliceGroups.forEach((g, i) => g.visible = (enabled && i === idx));
+      },
+      setDisplay(showSkin, showWire) {
+        skinMesh.visible = showSkin;
+        wireLines.visible = showWire;
+      }
+    };
+  };
+
   function buildPanel() {
     const D = APP.D;
+    const DHEX = window.ZHANG_HEX_DATA;
     const vChips = D ? D.svPaths.map((sp, i) =>
       `<button class="cap-chip" onclick="APP.modules.branchB.highlightVessel(${i})">${sp.name}</button>`
     ).join('') : '';
 
     document.getElementById('panel-branchB').innerHTML = `
-      <div class="kicker green">Branch B &bull; Zhang et al. (2007)</div>
-      <div class="title">Centerline Sweeping &amp; Structured NURBS Skin</div>
+      <div class="kicker green">Branch B &bull; Zhang et al. (2007) Paradigm</div>
+      <div class="title">Structured All-Hex O-Grid &amp; Branching</div>
       <div class="badge-note">
-        <b>Literature Reference Only (Not Run in Gmsh):</b> Visualized directly on <b>0039_H_ABAO_AAA</b> by smoothly lofting your 259 SimVascular NURBS contours into structured quads &amp; an O-grid brick slice.
+        <b>10-Vessel All-Hex Prototype (0039_H_ABAO_AAA):</b> B1&ndash;B2 show centerline sweeping intuition; <b>B3</b> loads your real <b>${DHEX ? DHEX.meta.hexCount.toLocaleString() : '28,328'}-hex</b> prototype built piecewise from .ctgr rings (0 inverted, minSICN +0.0402, minSIGE mean 0.8543 &mdash; not full automatic C++ NURBS/trifurcation from raw STL).
       </div>
       <div class="card">
         <div class="sec-lbl">Sequential Branch B Steps</div>
         <div style="display:flex;flex-direction:column;gap:6px;">
           <button class="btn active" id="bb-s-b1" onclick="APP.modules.branchB.setStage('b1')">B1. 10 Real Centerlines &amp; 259 Lumen Contours</button>
-          <button class="btn" id="bb-s-b2" onclick="APP.modules.branchB.setStage('b2')">B2. Smooth NURBS Quad Skin + O-Grid Brick Slice</button>
+          <button class="btn" id="bb-s-b2" onclick="APP.modules.branchB.setStage('b2')">B2. Lofted NURBS Skin + Synthetic O-Grid Intuition</button>
+          <button class="btn" id="bb-s-b3" onclick="APP.modules.branchB.setStage('b3')">B3. Real All-Hex Prototype (28,328 Hexes, 0 Inverted)</button>
         </div>
       </div>
 
@@ -294,15 +354,8 @@
             <button class="btn" id="bb-play-btn" onclick="APP.modules.branchB.togglePlay()">Pause</button>
             <span style="font-size:11.5px;color:var(--gold);font-weight:700;">Sweep Along Aorta</span>
           </div>
-          <input type="range" id="bb-scrub" min="0" max="1" step="0.002" value="0" oninput="APP.modules.branchB.scrub(this.value)" />
-          <div class="row" style="margin-top:6px;">
-            <span style="font-size:12px;color:var(--muted);">Speed:</span>
-            <div style="display:flex;gap:4px;">
-              <button class="btn speed-btn" data-speed="0.25" onclick="APP.setSpeed(0.25)">0.25&times;</button>
-              <button class="btn speed-btn active" data-speed="0.5" onclick="APP.setSpeed(0.5)">0.5&times;</button>
-              <button class="btn speed-btn" data-speed="1" onclick="APP.setSpeed(1)">1&times;</button>
-            </div>
-          </div>
+          ${APP.stepperHtml('bb-b1', 'green')}
+          ${APP.speedHtml()}
           <div class="sec-lbl" style="margin-top:8px;">Highlight Any of the 10 Vessels</div>
           <div class="cap-grid">${vChips}</div>
         </div>
@@ -310,18 +363,79 @@
 
       <div id="bb-ctrl-b2" class="hidden">
         <div class="card">
-          <div class="sec-lbl">72-Slice O-Grid Brick Cutaway</div>
+          <div class="sec-lbl">72-Slice O-Grid Brick Cutaway (Click or Hold)</div>
           <div class="row">
             <label><input type="checkbox" id="bb-cut-on" checked onchange="APP.modules.branchB.syncB2()" /> Enable Cross-Section</label>
             <button class="btn" id="bb-sweep-btn" onclick="APP.modules.branchB.toggleSweep()">Auto-Sweep</button>
           </div>
-          <input type="range" id="bb-cut" min="0" max="71" value="38" oninput="APP.modules.branchB.syncB2()" />
+          ${APP.stepperHtml('bb-b2', 'green')}
+          ${APP.speedHtml()}
           <p class="copy" style="font-size:12px;margin-top:8px;">
-            Notice the <b>square O-grid brick core</b> in the middle (no pie-wedge pinching!) surrounded by concentric brick rings flush with the smooth quad skin.
+            Shows the idealized <b>square O-grid brick core</b> surrounded by concentric brick rings flush with the lofted quad skin.
+          </p>
+        </div>
+      </div>
+
+      <div id="bb-ctrl-b3" class="hidden">
+        <div class="card">
+          <div class="sec-lbl">Real 28,328-Hex Mesh &amp; 72-Slice Cutaway (Click or Hold)</div>
+          <div class="row">
+            <label><input type="checkbox" id="bb-b3-cut-on" checked onchange="APP.modules.branchB.syncB3()" /> Enable Cross-Section</label>
+            <button class="btn" id="bb-b3-sweep-btn" onclick="APP.modules.branchB.toggleSweepB3()">Auto-Sweep</button>
+          </div>
+          ${APP.stepperHtml('bb-b3', 'green')}
+          ${APP.speedHtml()}
+          <div class="row" style="margin-top:8px;">
+            <label><input type="checkbox" id="bb-b3-skin" checked onchange="APP.modules.branchB.syncB3()" /> Shaded Wall</label>
+            <label><input type="checkbox" id="bb-b3-wire" checked onchange="APP.modules.branchB.syncB3()" /> Outer Quad Grid</label>
+          </div>
+          <p class="copy" style="font-size:12px;margin-top:8px;">
+            <b>aaa_zhang_multibranch_hex.msh</b>: 28,328 hexahedra across 10 vessels, 8,416 wall quads (9,024 w/ caps), O-grid trunk (<i>Aorta_LeftIliac</i>) + conformal wall-window branches + Smart-Laplacian untangling.<br/>
+            <b>Quality:</b> 0 inverted hexes &bull; minSICN min = <b>+0.0402</b> &bull; minSIGE mean = <b>0.8543</b>.
           </p>
         </div>
       </div>
     `;
+
+    // Bind B1 click-or-hold
+    const setB1Manual = (v) => {
+      b1Play = false;
+      document.getElementById('bb-play-btn').textContent = 'Play';
+      b1Prog = ((v % 1) + 1) % 1;
+      updateB1Sweep(b1Prog);
+    };
+    APP.bindHoldButton('bb-b1-prev', {
+      continuous: true, ratePerSec: 0.36,
+      onStep: () => setB1Manual(b1Prog - 0.02),
+      onHoldDelta: (d) => setB1Manual(b1Prog - d)
+    });
+    APP.bindHoldButton('bb-b1-next', {
+      continuous: true, ratePerSec: 0.36,
+      onStep: () => setB1Manual(b1Prog + 0.02),
+      onHoldDelta: (d) => setB1Manual(b1Prog + d)
+    });
+
+    // Bind B2 click-or-hold
+    const stepB2 = (delta) => {
+      b2Sweeping = false;
+      document.getElementById('bb-sweep-btn').textContent = 'Auto-Sweep';
+      document.getElementById('bb-cut-on').checked = true;
+      b2CutIdx = Math.max(0, Math.min(71, b2CutIdx + delta));
+      APP.modules.branchB.syncB2();
+    };
+    APP.bindHoldButton('bb-b2-prev', { ratePerSec: 20, onStep: (n) => stepB2(-n) });
+    APP.bindHoldButton('bb-b2-next', { ratePerSec: 20, onStep: (n) => stepB2(n) });
+
+    // Bind B3 click-or-hold
+    const stepB3 = (delta) => {
+      b3Sweeping = false;
+      document.getElementById('bb-b3-sweep-btn').textContent = 'Auto-Sweep';
+      document.getElementById('bb-b3-cut-on').checked = true;
+      b3CutIdx = Math.max(0, Math.min(71, b3CutIdx + delta));
+      APP.modules.branchB.syncB3();
+    };
+    APP.bindHoldButton('bb-b3-prev', { ratePerSec: 20, onStep: (n) => stepB3(-n) });
+    APP.bindHoldButton('bb-b3-next', { ratePerSec: 20, onStep: (n) => stepB3(n) });
   }
 
   function init3D() {
@@ -349,6 +463,10 @@
     b2System = APP.buildZhangFromContours(b2ClipPlane);
     gB2.add(b2System.group);
     gB2.visible = false;
+
+    b3System = APP.buildRealZhangHexMesh(b3ClipPlane);
+    gB3.add(b3System.group);
+    gB3.visible = false;
   }
 
   function updateB1Sweep(p) {
@@ -365,21 +483,27 @@
         ring.material.color.setHex(active ? 0xffffff : PATH_COLORS[gi % PATH_COLORS.length]);
       });
     });
+    const lbl = document.getElementById('bb-b1-lbl'), bar = document.getElementById('bb-b1-bar');
+    if (lbl) lbl.textContent = `${Math.round(p * 100)}% (y=${sweepY.toFixed(1)})`;
+    if (bar) bar.style.width = `${(p * 100).toFixed(1)}%`;
   }
 
   APP.modules.branchB = {
     init() { buildPanel(); init3D(); },
     setStage(s) {
+      APP.stopHold();
       stage = s;
-      ['b1','b2'].forEach(k => document.getElementById('bb-s-'+k).classList.toggle('active', k===s));
-      document.getElementById('bb-ctrl-b1').classList.toggle('hidden', s!=='b1');
-      document.getElementById('bb-ctrl-b2').classList.toggle('hidden', s!=='b2');
-      gB1.visible = (s==='b1'); gB2.visible = (s==='b2');
-      this.syncB1(); this.syncB2();
+      ['b1','b2','b3'].forEach(k => document.getElementById('bb-s-'+k).classList.toggle('active', k===s));
+      ['b1','b2','b3'].forEach(k => document.getElementById('bb-ctrl-'+k).classList.toggle('hidden', k!==s));
+      gB1.visible = (s==='b1'); gB2.visible = (s==='b2'); gB3.visible = (s==='b3');
+      this.syncB1(); this.syncB2(); this.syncB3();
       APP.resetCamera();
-      document.getElementById('hud-left').textContent = (s==='b1')
-        ? 'Branch B1: Real 10-Vessel Centerlines & 259 Contours on AAA'
-        : 'Branch B2: Zhang Smooth Quad Skin + O-Grid Brick Slice';
+      const labels = {
+        b1: 'Branch B1: Real 10-Vessel Centerlines & 259 Contours on AAA',
+        b2: 'Branch B2: Lofted NURBS Skin + Synthetic O-Grid Brick Slice',
+        b3: 'Branch B3: Real Zhang-Style All-Hex Prototype (28,328 Hexes, 0 Inverted)'
+      };
+      document.getElementById('hud-left').textContent = labels[s] || '';
     },
     syncB1() {
       const sp = document.getElementById('bb-show-paths').checked;
@@ -389,15 +513,36 @@
     syncB2() {
       if (!APP.D || !b2System) return;
       const on = document.getElementById('bb-cut-on').checked;
-      const idx = parseInt(document.getElementById('bb-cut').value, 10);
-      const cutY = APP.D.meta.cuts[idx];
+      const cutY = APP.D.meta.cuts[b2CutIdx];
       b2ClipPlane.constant = on ? cutY : 9999;
       b2System.updateCut(cutY, on);
+      const lbl = document.getElementById('bb-b2-lbl'), bar = document.getElementById('bb-b2-bar');
+      if (lbl) lbl.textContent = `Slice ${b2CutIdx + 1} / 72 (y=${cutY.toFixed(1)})`;
+      if (bar) bar.style.width = `${((b2CutIdx / 71) * 100).toFixed(1)}%`;
+    },
+    syncB3() {
+      if (!APP.D || !b3System) return;
+      const on = document.getElementById('bb-b3-cut-on').checked;
+      const cutY = APP.D.meta.cuts[b3CutIdx];
+      b3ClipPlane.constant = on ? cutY : 9999;
+      b3System.updateSlice(b3CutIdx, on);
+      b3System.setDisplay(
+        document.getElementById('bb-b3-skin').checked,
+        document.getElementById('bb-b3-wire').checked
+      );
+      const lbl = document.getElementById('bb-b3-lbl'), bar = document.getElementById('bb-b3-bar');
+      if (lbl) lbl.textContent = `Slice ${b3CutIdx + 1} / 72 (y=${cutY.toFixed(1)})`;
+      if (bar) bar.style.width = `${((b3CutIdx / 71) * 100).toFixed(1)}%`;
     },
     toggleSweep() {
       b2Sweeping = !b2Sweeping;
       document.getElementById('bb-sweep-btn').textContent = b2Sweeping ? 'Stop Sweep' : 'Auto-Sweep';
       if (b2Sweeping) document.getElementById('bb-cut-on').checked = true;
+    },
+    toggleSweepB3() {
+      b3Sweeping = !b3Sweeping;
+      document.getElementById('bb-b3-sweep-btn').textContent = b3Sweeping ? 'Stop Sweep' : 'Auto-Sweep';
+      if (b3Sweeping) document.getElementById('bb-b3-cut-on').checked = true;
     },
     highlightVessel(idx) {
       selectedVessel = (selectedVessel === idx) ? null : idx;
@@ -405,21 +550,25 @@
       this.syncB1();
     },
     togglePlay() { b1Play = !b1Play; document.getElementById('bb-play-btn').textContent = b1Play ? 'Pause' : 'Play'; },
-    scrub(v) { b1Play = false; document.getElementById('bb-play-btn').textContent = 'Play'; b1Prog = parseFloat(v); updateB1Sweep(b1Prog); },
     onEnter() { this.setStage(stage); },
     update(now) {
       if (stage==='b1' && b1Play) {
         b1Prog = (b1Prog + 0.0016 * APP.speed) % 1.0;
-        document.getElementById('bb-scrub').value = b1Prog.toFixed(3);
         updateB1Sweep(b1Prog);
       }
       if (stage==='b2' && b2Sweeping && APP.D && now - b2Last > (55 / APP.speed)) {
         b2Last = now;
-        const sl = document.getElementById('bb-cut');
-        let nxt = parseInt(sl.value, 10) + b2Dir;
-        if (nxt <= 0) { nxt = 0; b2Dir = 1; }
-        if (nxt >= 71) { nxt = 71; b2Dir = -1; }
-        sl.value = nxt; this.syncB2();
+        b2CutIdx += b2Dir;
+        if (b2CutIdx <= 0) { b2CutIdx = 0; b2Dir = 1; }
+        if (b2CutIdx >= 71) { b2CutIdx = 71; b2Dir = -1; }
+        this.syncB2();
+      }
+      if (stage==='b3' && b3Sweeping && APP.D && now - b3Last > (55 / APP.speed)) {
+        b3Last = now;
+        b3CutIdx += b3Dir;
+        if (b3CutIdx <= 0) { b3CutIdx = 0; b3Dir = 1; }
+        if (b3CutIdx >= 71) { b3CutIdx = 71; b3Dir = -1; }
+        this.syncB3();
       }
     }
   };

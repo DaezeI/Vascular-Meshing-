@@ -1,11 +1,11 @@
-﻿(function () {
+(function () {
   const APP = window.APP;
   const grp = APP.groups.branchA;
 
-  let stage = 'a1'; // 'a1' | 'a2' | 'a3'
-  let a1Sub = 'anim'; // 'anim' | 'patches' | 'gamma'
+  let stage = 'a1';
+  let a1Sub = 'anim';
   let a1Play = true, a1Prog = 0;
-  let sweeping = false, sweepDir = -1, lastSweep = 0, badCursor = -1;
+  let cutIdx = 38, sweeping = false, sweepDir = -1, lastSweep = 0, badCursor = -1;
 
   let gA1 = new THREE.Group(), gA2 = new THREE.Group(), gA3 = new THREE.Group();
   grp.add(gA1, gA2, gA3);
@@ -43,15 +43,8 @@
               <button class="btn" id="ba-play-btn" onclick="APP.modules.branchA.togglePlay()">Pause</button>
               <span id="ba-phase" style="font-size:11.5px;color:var(--accent);font-weight:700;">1. Peel to 2D Disk</span>
             </div>
-            <input type="range" id="ba-scrub" min="0" max="1" step="0.002" value="0" oninput="APP.modules.branchA.scrub(this.value)" />
-            <div class="row" style="margin-top:6px;">
-              <span style="font-size:12px;color:var(--muted);">Speed:</span>
-              <div style="display:flex;gap:4px;">
-                <button class="btn speed-btn" data-speed="0.25" onclick="APP.setSpeed(0.25)">0.25&times;</button>
-                <button class="btn speed-btn active" data-speed="0.5" onclick="APP.setSpeed(0.5)">0.5&times;</button>
-                <button class="btn speed-btn" data-speed="1" onclick="APP.setSpeed(1)">1&times;</button>
-              </div>
-            </div>
+            ${APP.stepperHtml('ba-a1')}
+            ${APP.speedHtml()}
           </div>
           <p class="copy" style="font-size:12px;margin-top:8px;">
             <b>Result:</b> Cut surface triangles by <b>84%</b> (161.9k &rarr; 25.6k) and boosted mean 2D Gamma from <b>0.656 &rarr; 0.927</b>.
@@ -61,12 +54,13 @@
 
       <div id="ba-ctrl-vol" class="hidden">
         <div class="card">
-          <div class="sec-lbl">72-Slice Interior Cutaway</div>
+          <div class="sec-lbl">72-Slice Interior Cutaway (Click or Hold)</div>
           <div class="row">
             <label><input type="checkbox" id="ba-cut-on" checked onchange="APP.modules.branchA.syncCut()" /> Enable Cross-Section</label>
             <button class="btn" id="ba-sweep-btn" onclick="APP.modules.branchA.toggleSweep()">Auto-Sweep</button>
           </div>
-          <input type="range" id="ba-cut" min="0" max="71" value="38" oninput="APP.modules.branchA.syncCut()" />
+          ${APP.stepperHtml('ba-cut')}
+          ${APP.speedHtml()}
         </div>
         <div class="card hidden" id="ba-bad-card">
           <div class="sec-lbl">10 Inverted Prisms (minSICN &le; 0)</div>
@@ -86,6 +80,34 @@
         </div>
       </div>
     `;
+
+    // Bind click-or-hold steppers
+    const setA1Manual = (nextVal) => {
+      a1Play = false;
+      document.getElementById('ba-play-btn').textContent = 'Play';
+      a1Prog = ((nextVal % 1) + 1) % 1;
+      updateUnwrap(a1Prog);
+    };
+    APP.bindHoldButton('ba-a1-prev', {
+      continuous: true, ratePerSec: 0.36,
+      onStep: () => setA1Manual(a1Prog - 0.02),
+      onHoldDelta: (d) => setA1Manual(a1Prog - d)
+    });
+    APP.bindHoldButton('ba-a1-next', {
+      continuous: true, ratePerSec: 0.36,
+      onStep: () => setA1Manual(a1Prog + 0.02),
+      onHoldDelta: (d) => setA1Manual(a1Prog + d)
+    });
+
+    const stepCut = (delta) => {
+      sweeping = false;
+      document.getElementById('ba-sweep-btn').textContent = 'Auto-Sweep';
+      document.getElementById('ba-cut-on').checked = true;
+      cutIdx = Math.max(0, Math.min(71, cutIdx + delta));
+      APP.modules.branchA.syncCut();
+    };
+    APP.bindHoldButton('ba-cut-prev', { ratePerSec: 20, onStep: (n) => stepCut(-n) });
+    APP.bindHoldButton('ba-cut-next', { ratePerSec: 20, onStep: (n) => stepCut(n) });
   }
 
   function hsl(h, s, l) {
@@ -193,11 +215,15 @@
     }
     patchGeom.attributes.position.needsUpdate = true;
     patchGeom.computeVertexNormals();
+    const rLbl = document.getElementById('ba-a1-lbl'), rBar = document.getElementById('ba-a1-bar');
+    if (rLbl) rLbl.textContent = `${Math.round(p * 100)}%`;
+    if (rBar) rBar.style.width = `${(p * 100).toFixed(1)}%`;
   }
 
   APP.modules.branchA = {
     init() { buildPanel(); init3D(); updateUnwrap(0); },
     setStage(s) {
+      APP.stopHold();
       stage = s;
       ['a1','a2','a3'].forEach(k => document.getElementById('ba-s-'+k).classList.toggle('active', k===s));
       gA1.visible = (s==='a1'); gA2.visible = (s==='a2'); gA3.visible = (s==='a3');
@@ -219,17 +245,19 @@
       APP.resetCamera();
     },
     togglePlay() { a1Play = !a1Play; document.getElementById('ba-play-btn').textContent = a1Play ? 'Pause' : 'Play'; },
-    scrub(v) { a1Play = false; document.getElementById('ba-play-btn').textContent = 'Play'; a1Prog = parseFloat(v); updateUnwrap(a1Prog); },
     syncCut() {
       if (!APP.D) return;
       const on = document.getElementById('ba-cut-on').checked;
-      const idx = parseInt(document.getElementById('ba-cut').value, 10);
-      APP.clipPlane.constant = on ? APP.D.meta.cuts[idx] : 9999;
+      const cutY = APP.D.meta.cuts[cutIdx];
+      APP.clipPlane.constant = on ? cutY : 9999;
       [...closedSlices, ...blTetSlices, ...blPrismSlices].forEach(m => m.visible = false);
       if (on) {
-        if (stage==='a2') closedSlices[idx].visible = true;
-        if (stage==='a3') { blTetSlices[idx].visible = true; blPrismSlices[idx].visible = true; }
+        if (stage==='a2') closedSlices[cutIdx].visible = true;
+        if (stage==='a3') { blTetSlices[cutIdx].visible = true; blPrismSlices[cutIdx].visible = true; }
       }
+      const lbl = document.getElementById('ba-cut-lbl'), bar = document.getElementById('ba-cut-bar');
+      if (lbl) lbl.textContent = `Slice ${cutIdx + 1} / 72 (y=${cutY.toFixed(1)})`;
+      if (bar) bar.style.width = `${((cutIdx / 71) * 100).toFixed(1)}%`;
     },
     syncBad() {
       if (!APP.D) return;
@@ -269,16 +297,13 @@
     update(now) {
       if (stage==='a1' && a1Sub==='anim' && a1Play) {
         a1Prog = (a1Prog + 0.0018 * APP.speed) % 1.0;
-        document.getElementById('ba-scrub').value = a1Prog.toFixed(3);
         updateUnwrap(a1Prog);
       }
       if ((stage==='a2' || stage==='a3') && sweeping && APP.D && now - lastSweep > (55 / APP.speed)) {
         lastSweep = now;
-        const sl = document.getElementById('ba-cut');
-        let nxt = parseInt(sl.value, 10) + sweepDir;
-        if (nxt <= 0) { nxt = 0; sweepDir = 1; }
-        if (nxt >= 71) { nxt = 71; sweepDir = -1; }
-        sl.value = nxt;
+        cutIdx += sweepDir;
+        if (cutIdx <= 0) { cutIdx = 0; sweepDir = 1; }
+        if (cutIdx >= 71) { cutIdx = 71; sweepDir = -1; }
         this.syncCut();
       }
     }

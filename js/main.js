@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const canvas = document.getElementById('canvas3d');
   const wrap = document.getElementById('viewport-wrap');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -46,10 +46,80 @@
     return grp;
   };
   APP.smoothstep = function (t) { return t * t * (3 - 2 * t); };
+
   APP.setSpeed = function (s) {
     APP.speed = s;
     document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('active', parseFloat(b.dataset.speed) === s));
   };
+
+  APP.speedHtml = function () {
+    const vals = [0.25, 0.5, 0.75, 1, 2];
+    const btns = vals.map(v =>
+      `<button class="btn speed-btn${APP.speed === v ? ' active' : ''}" data-speed="${v}" onclick="APP.setSpeed(${v})">${v}&times;</button>`
+    ).join('');
+    return `<div class="speed-bar"><span style="font-size:11.5px;color:var(--muted);">Speed:</span><div class="speed-btns">${btns}</div></div>`;
+  };
+
+  // Global hold-to-slide state (click = 1 step, hold = smooth slide scaled by APP.speed)
+  let holdState = null;
+  APP.stopHold = function () {
+    if (!holdState) return;
+    if (holdState.delayId) clearTimeout(holdState.delayId);
+    if (holdState.rafId) cancelAnimationFrame(holdState.rafId);
+    if (holdState.btn) holdState.btn.classList.remove('holding');
+    holdState = null;
+  };
+  window.addEventListener('pointerup', APP.stopHold);
+  window.addEventListener('pointercancel', APP.stopHold);
+  window.addEventListener('blur', APP.stopHold);
+
+  APP.bindHoldButton = function (btnId, opts) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    const ratePerSec = opts.ratePerSec || 20; // at 1x speed
+    btn.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      APP.stopHold();
+      opts.onStep(1); // immediate single click step
+      btn.classList.add('holding');
+      const state = { btn, delayId: null, rafId: null, lastTime: 0, accum: 0 };
+      holdState = state;
+      state.delayId = setTimeout(() => {
+        if (holdState !== state) return;
+        state.lastTime = performance.now();
+        function tick(now) {
+          if (holdState !== state) return;
+          const dt = Math.min(0.1, (now - state.lastTime) / 1000);
+          state.lastTime = now;
+          if (opts.continuous) {
+            opts.onHoldDelta(dt * ratePerSec * APP.speed);
+          } else {
+            state.accum += dt * ratePerSec * APP.speed;
+            const steps = Math.floor(state.accum);
+            if (steps >= 1) {
+              state.accum -= steps;
+              opts.onStep(steps);
+            }
+          }
+          state.rafId = requestAnimationFrame(tick);
+        }
+        state.rafId = requestAnimationFrame(tick);
+      }, 210);
+    });
+  };
+
+  APP.stepperHtml = function (prefix, fillClass = '') {
+    return `
+      <div class="stepper-row">
+        <button class="btn step-btn" id="${prefix}-prev" title="Click: -1 | Hold: slide down">&lsaquo; Prev</button>
+        <span class="step-readout" id="${prefix}-lbl">&mdash;</span>
+        <button class="btn step-btn" id="${prefix}-next" title="Click: +1 | Hold: slide up">Next &rsaquo;</button>
+      </div>
+      <div class="step-track"><div class="step-fill ${fillClass}" id="${prefix}-bar" style="width:50%"></div></div>
+    `;
+  };
+
   APP.setCameraPreset = function (preset) {
     const mod = APP.modules[APP.activeTab];
     if (mod && mod.overridePreset && mod.overridePreset(preset)) return;
@@ -75,6 +145,7 @@
     APP.setCameraPreset('front');
   };
   APP.goTab = function (tab) {
+    APP.stopHold();
     const prevMod = APP.modules[APP.activeTab];
     if (prevMod && prevMod.onExit) prevMod.onExit();
     APP.activeTab = tab;
@@ -107,6 +178,7 @@
       `;
     }
     Object.values(APP.modules).forEach(m => m.init && m.init());
+    APP.setSpeed(APP.speed);
     APP.goTab('start');
     requestAnimationFrame(loop);
   };

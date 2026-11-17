@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const APP = window.APP;
   const sceneA = new THREE.Scene(), sceneB = new THREE.Scene();
   const camA = new THREE.PerspectiveCamera(40, 1, 0.05, 500);
@@ -12,46 +12,56 @@
 
   const cmpClip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 9999);
   let aTetSlices = [], aPrismSlices = [], bSystem = null;
-  let sweeping = false, sDir = -1, sLast = 0;
+  let cutIdx = 38, sweeping = false, sDir = -1, sLast = 0;
 
   function buildPanel() {
     document.getElementById('panel-compare').innerHTML = `
       <div class="kicker">Same Artery &bull; Same Region &bull; Side-by-Side</div>
       <div class="title">Branch A vs. Branch B on 0039_H_ABAO_AAA</div>
       <p class="copy">
-        Both panels show the <b>exact same patient, same camera, and same slice height</b>. Orbit or drag the slice slider to compare the skins and interiors directly:
+        Both panels show your <b>real generated meshes on 0039_H_ABAO_AAA</b> at the exact same camera and slice height:
       </p>
       <div class="card">
-        <div class="sec-lbl">Synced 72-Slice Cutaway</div>
+        <div class="sec-lbl">Synced 72-Slice Cutaway (Click or Hold)</div>
         <div class="row">
           <label><input type="checkbox" id="cmp-cut-on" checked onchange="APP.modules.compare.syncCut()" /> Enable Slice</label>
           <button class="btn" id="cmp-sweep-btn" onclick="APP.modules.compare.toggleSweep()">Auto-Sweep</button>
         </div>
-        <input type="range" id="cmp-cut" min="0" max="71" value="38" oninput="APP.modules.compare.syncCut()" />
+        ${APP.stepperHtml('cmp-cut')}
+        ${APP.speedHtml()}
       </div>
       <div class="card">
         <table class="cmp-table">
-          <tr><th>Dimension</th><th>Branch A (Marchandise)</th><th>Branch B (Zhang)</th></tr>
-          <tr><td><b>Outer Skin</b></td><td>Unstructured triangles (25.6k)</td><td>Smooth structured quads / NURBS</td></tr>
-          <tr><td><b>Interior</b></td><td>5 prism layers + random tets</td><td>Concentric structured hex bricks</td></tr>
-          <tr><td><b>10-Branch AAA</b></td><td><b>Automatic</b> (69 patches)</td><td>Requires fork template splits</td></tr>
-          <tr><td><b>Main Risk</b></td><td>10 inverted prisms at tight kinks</td><td>Brick pinching at fat/skinny forks</td></tr>
+          <tr><th>Metric</th><th>Branch A (Marchandise)</th><th>Branch B (Zhang Prototype)</th></tr>
+          <tr><td><b>Outer Skin</b></td><td>25,556 tris (69 patches)</td><td>8,416 wall quads (9,024 w/ caps)</td></tr>
+          <tr><td><b>Interior</b></td><td>125,885 prisms + 69,045 tets</td><td>28,328 hexes (10 vessels)</td></tr>
+          <tr><td><b>Inversions</b></td><td style="color:#fb7185"><b>10 inverted prisms</b> (minSICN -0.1126)</td><td style="color:#34d399"><b>0 inverted hexes</b> (minSICN +0.0402)</td></tr>
+          <tr><td><b>Automation</b></td><td><b>Automatic</b> from raw STL</td><td>Piecewise O-grid + windows from .ctgr</td></tr>
         </table>
       </div>
       <div class="card">
         <div class="sec-lbl">Jump Into Either Branch</div>
         <div class="row">
           <button class="btn" style="flex:1;" onclick="APP.goTab('branchA')">Explore Branch A</button>
-          <button class="btn" style="flex:1;" onclick="APP.goTab('branchB')">Explore Branch B</button>
+          <button class="btn" style="flex:1;" onclick="APP.goTab('branchB');APP.modules.branchB.setStage('b3')">Explore Real Hex (B3)</button>
         </div>
       </div>
     `;
+
+    const stepCmp = (delta) => {
+      sweeping = false;
+      document.getElementById('cmp-sweep-btn').textContent = 'Auto-Sweep';
+      document.getElementById('cmp-cut-on').checked = true;
+      cutIdx = Math.max(0, Math.min(71, cutIdx + delta));
+      APP.modules.compare.syncCut();
+    };
+    APP.bindHoldButton('cmp-cut-prev', { ratePerSec: 20, onStep: (n) => stepCmp(-n) });
+    APP.bindHoldButton('cmp-cut-next', { ratePerSec: 20, onStep: (n) => stepCmp(n) });
   }
 
   function initScenes() {
     const D = APP.D;
     if (!D) return;
-    // LEFT: Branch A real skin (showing triangle wireframe!) + 72 prism/tet slices
     sceneA.add(new THREE.Mesh(APP.buildIndexed(D.blSkin), new THREE.MeshStandardMaterial({
       color: 0x94a3b8, transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: [cmpClip]
     })));
@@ -62,8 +72,9 @@
     aPrismSlices = D.blPrismSlices.map(a => APP.makeSliceGroup(a, 0xfacc15, 0x422006));
     [...aTetSlices, ...aPrismSlices].forEach(m => sceneA.add(m));
 
-    // RIGHT: Branch B structured quad/NURBS skin + radial hex slice built from real 0039_H_ABAO_AAA contours
-    bSystem = APP.buildZhangFromContours(cmpClip);
+    bSystem = (window.ZHANG_HEX_DATA && APP.buildRealZhangHexMesh)
+      ? APP.buildRealZhangHexMesh(cmpClip)
+      : APP.buildZhangFromContours(cmpClip);
     sceneB.add(bSystem.group);
   }
 
@@ -72,13 +83,16 @@
     syncCut() {
       if (!APP.D || !bSystem) return;
       const on = document.getElementById('cmp-cut-on').checked;
-      const idx = parseInt(document.getElementById('cmp-cut').value, 10);
-      const cutY = APP.D.meta.cuts[idx];
+      const cutY = APP.D.meta.cuts[cutIdx];
       cmpClip.constant = on ? cutY : 9999;
       aTetSlices.forEach(m => m.visible = false);
       aPrismSlices.forEach(m => m.visible = false);
-      if (on) { aTetSlices[idx].visible = true; aPrismSlices[idx].visible = true; }
-      bSystem.updateCut(cutY, on);
+      if (on) { aTetSlices[cutIdx].visible = true; aPrismSlices[cutIdx].visible = true; }
+      if (bSystem.updateSlice) bSystem.updateSlice(cutIdx, on);
+      else bSystem.updateCut(cutY, on);
+      const lbl = document.getElementById('cmp-cut-lbl'), bar = document.getElementById('cmp-cut-bar');
+      if (lbl) lbl.textContent = `Slice ${cutIdx + 1} / 72 (y=${cutY.toFixed(1)})`;
+      if (bar) bar.style.width = `${((cutIdx / 71) * 100).toFixed(1)}%`;
     },
     toggleSweep() {
       sweeping = !sweeping;
@@ -87,21 +101,19 @@
     },
     onEnter() {
       this.syncCut();
-      document.getElementById('hud-left').textContent = 'Synced Comparison on 0039_H_ABAO_AAA: Unstructured Triangles/Prisms vs. Structured Quads/Hex Bricks';
+      document.getElementById('hud-left').textContent = 'Synced Comparison on 0039_H_ABAO_AAA: Unstructured Prisms + Tets (194.9k) vs. Structured All-Hex Prototype (28.3k)';
     },
     update(now) {
       if (sweeping && APP.D && now - sLast > (60 / APP.speed)) {
         sLast = now;
-        const sl = document.getElementById('cmp-cut');
-        let nxt = parseInt(sl.value, 10) + sDir;
-        if (nxt <= 0) { nxt = 0; sDir = 1; }
-        if (nxt >= 71) { nxt = 71; sDir = -1; }
-        sl.value = nxt; this.syncCut();
+        cutIdx += sDir;
+        if (cutIdx <= 0) { cutIdx = 0; sDir = 1; }
+        if (cutIdx >= 71) { cutIdx = 71; sDir = -1; }
+        this.syncCut();
       }
     },
     renderSplit() {
       const w = APP.wrap.clientWidth, h = APP.wrap.clientHeight, half = Math.floor(w / 2);
-      // Both models share exact 0039_H_ABAO_AAA coordinates -> exact synced camera & target!
       camA.position.copy(APP.camera.position);
       camA.lookAt(APP.controls.target);
       camA.aspect = half / h; camA.updateProjectionMatrix();

@@ -65,6 +65,7 @@
             <span>Solver Status:</span>
             <span id="st-phys-pill" class="pill">CONVERGED</span>
           </div>
+          ${APP.speedHtml()}
         </div>
       </div>
     `;
@@ -181,7 +182,7 @@
     ctx.stroke();
 
     // Update & draw flowing blood particles
-    const speedScale = physState === 'healthy' ? 0.0022 : (physState === 'slivers' ? 0.0007 : 0.0);
+    const speedScale = (physState === 'healthy' ? 0.0022 : (physState === 'slivers' ? 0.0007 : 0.0)) * (APP.speed * 2);
     particles.forEach(pt => {
       const parabolic = Math.max(0.12, 1 - pt.v * pt.v);
       pt.u = (pt.u + speedScale * parabolic) % 1.0;
