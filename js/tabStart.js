@@ -5,10 +5,18 @@
   let physState = 'healthy';
   let mWall, mCaps, capSpheres = [], highlightRing;
 
+  const c2dWrap = document.createElement('div');
+  c2dWrap.id = 'canvas2d-wrap';
+  c2dWrap.style.cssText = 'position:absolute;top:18px;bottom:18px;left:448px;right:24px;z-index:18;border-radius:18px;border:1px solid rgba(255,245,235,0.16);background:rgba(24,8,12,0.94);overflow:hidden;display:none;';
   const c2d = document.createElement('canvas');
   c2d.id = 'canvas2d-physics';
-  c2d.style.cssText = 'position:absolute;top:18px;bottom:18px;right:24px;width:min(56vw,780px);z-index:18;border-radius:18px;border:1px solid rgba(255,245,235,0.16);background:rgba(24,8,12,0.92);display:none;';
-  APP.wrap.appendChild(c2d);
+  c2d.style.cssText = 'width:100%;height:100%;display:block;';
+  c2dWrap.appendChild(c2d);
+  APP.wrap.appendChild(c2dWrap);
+  c2dWrap.addEventListener('wheel', (e) => {
+    const sc = document.getElementById('scroll-story');
+    if (sc && !e.ctrlKey && !e.metaKey) sc.scrollTop += e.deltaY;
+  }, { passive: true });
   const ctx = c2d.getContext('2d');
 
   const particles = Array.from({ length: 75 }, (_, i) => ({
@@ -101,7 +109,8 @@
   }
 
   function drawPhysics2D(now) {
-    const rect = c2d.getBoundingClientRect();
+    const rect = c2dWrap.getBoundingClientRect();
+    if (rect.width < 10 || rect.height < 10) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     if (c2d.width !== Math.floor(rect.width * dpr) || c2d.height !== Math.floor(rect.height * dpr)) {
       c2d.width = Math.floor(rect.width * dpr);
@@ -228,7 +237,7 @@
       document.getElementById('st-btn-phys').classList.toggle('active', m === 'physics');
       document.getElementById('st-scan-controls').classList.toggle('hidden', m !== 'scan');
       document.getElementById('st-phys-controls').classList.toggle('hidden', m !== 'physics');
-      c2d.style.display = (m === 'physics') ? 'block' : 'none';
+      c2dWrap.style.display = (m === 'physics') ? 'block' : 'none';
       APP.syncDockSlice({ visible: false });
       grp.visible = (m === 'scan');
       APP.setFigure(m === 'scan' ? 'fig1-anatomy' : 'fig2-quality');
@@ -279,7 +288,7 @@
     },
     onEnter() { this.setSub(subMode); },
     onExit() {
-      c2d.style.display = 'none';
+      c2dWrap.style.display = 'none';
       
     },
     update(now) {

@@ -326,9 +326,9 @@
     if (!force && prev !== b) APP.audio?.playSwoosh?.();
   }
 
-  APP.goBeat = function (b) {
+  APP.goBeat = function (b, instant) {
     const el = document.getElementById('beat-' + b);
-    if (el && scrollEl) scrollEl.scrollTo({ top: el.offsetTop, behavior: 'smooth' });
+    if (el && scrollEl) scrollEl.scrollTo({ top: el.offsetTop, behavior: instant ? 'auto' : 'smooth' });
   };
   APP.goTab = function (tab) {
     const map = { start: 1, branchA: 2, branchB: 3, compare: 4 };
@@ -337,7 +337,7 @@
   APP.goFigure = function (figKey, updateHash = true) {
     const cfg = FIGURES[figKey];
     if (!cfg) return false;
-    APP.goBeat(cfg.beat);
+    APP.goBeat(cfg.beat, true);
     setActiveBeat(cfg.beat, true);
     if (cfg.beat === 1 && cfg.sub) APP.modules.start.setSub(cfg.sub);
     if (cfg.beat === 2 && cfg.stage) APP.modules.branchA.setStage(cfg.stage);
