@@ -80,19 +80,43 @@
         aortaRingsInfo.push({ c, r: rAvg });
       });
     }
-    function insideAorta(pt) {
+    function nearestAorta(pt) {
+      let best = null, bestD = Infinity;
       for (let i = 0; i < aortaRingsInfo.length; i++) {
-        if (pt.distanceTo(aortaRingsInfo[i].c) < aortaRingsInfo[i].r * 0.86) return true;
+        const d = pt.distanceTo(aortaRingsInfo[i].c);
+        if (d < bestD) { bestD = d; best = aortaRingsInfo[i]; }
       }
-      return false;
+      return { info: best, dist: bestD };
     }
 
     D.svContours.forEach(sc => {
       let rawRings = sc.rings.map(rFlat => toVecs(rFlat));
-      if (sc.id !== 'aorta' && aortaRingsInfo.length) {
-        const outFlag = rawRings.map(pts => !insideAorta(centroid(pts))); rawRings = rawRings.filter((_, idx) => outFlag[idx] || (idx > 0 && outFlag[idx - 1]) || (idx + 1 < outFlag.length && outFlag[idx + 1]));
-      }
       if (rawRings.length < 2) return;
+
+      // Trim deep interior stubs (< 55% aorta radius) AND anchor short-starting branches (like r_iliac) right into the wall!
+      if (sc.id !== 'aorta' && aortaRingsInfo.length) {
+        const deepFlag = rawRings.map(pts => {
+          const { info, dist } = nearestAorta(centroid(pts));
+          return info && dist < info.r * 0.55;
+        });
+        rawRings = rawRings.filter((_, idx) => !deepFlag[idx]);
+        if (rawRings.length < 2) return;
+
+        // Check which end attaches to the aorta wall; if it stops outside, tuck 1 anchor ring into the aorta wall
+        const c0 = centroid(rawRings[0]), cL = centroid(rawRings[rawRings.length - 1]);
+        const n0 = nearestAorta(c0), nL = nearestAorta(cL);
+        const attachStart = n0.dist <= nL.dist;
+        const near = attachStart ? n0 : nL;
+        const endC = attachStart ? c0 : cL;
+        const endPts = attachStart ? rawRings[0] : rawRings[rawRings.length - 1];
+        if (near.info && near.dist > near.info.r * 0.58 && near.dist < 3.0) {
+          const targetC = near.info.c.clone().lerp(endC, (near.info.r * 0.55) / near.dist);
+          const shift = targetC.sub(endC);
+          const anchorRing = endPts.map(p => p.clone().add(shift));
+          if (attachStart) rawRings.unshift(anchorRing);
+          else rawRings.push(anchorRing);
+        }
+      }
 
       const aligned = [resampleClosed(rawRings[0], N)];
       for (let k = 1; k < rawRings.length; k++) {
@@ -400,4 +424,3 @@
     }
   };
 })();
-
