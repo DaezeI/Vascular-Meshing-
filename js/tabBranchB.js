@@ -16,7 +16,6 @@
     0xfb923c, 0xa78bfa, 0x4ade80, 0xf87171, 0xe879f9
   ];
 
-  // Builds Zhang-style smooth NURBS-like quad skin + exact watertight O-grid brick cross-sections
   APP.buildZhangFromContours = function (clipPlaneRef) {
     const D = APP.D;
     const out = new THREE.Group();
@@ -91,17 +90,15 @@
     D.svContours.forEach(sc => {
       let rawRings = sc.rings.map(rFlat => toVecs(rFlat));
       if (sc.id !== 'aorta' && aortaRingsInfo.length) {
-        rawRings = rawRings.filter(pts => !insideAorta(centroid(pts)));
+        const outFlag = rawRings.map(pts => !insideAorta(centroid(pts))); rawRings = rawRings.filter((_, idx) => outFlag[idx] || (idx > 0 && outFlag[idx - 1]) || (idx + 1 < outFlag.length && outFlag[idx + 1]));
       }
       if (rawRings.length < 2) return;
 
-      // Align all rings sequentially
       const aligned = [resampleClosed(rawRings[0], N)];
       for (let k = 1; k < rawRings.length; k++) {
         aligned.push(alignRing(aligned[k - 1], resampleClosed(rawRings[k], N)));
       }
 
-      // Smooth Catmull-Rom subdivision (3 sub-steps per contour interval) for NURBS-smooth curvature
       const smoothRings = [];
       for (let k = 0; k < aligned.length - 1; k++) {
         const cA = centroid(aligned[k]), cB = centroid(aligned[k + 1]);
@@ -202,7 +199,6 @@
           outer.push(best);
         }
 
-        // Zhang O-grid: square inner brick core + 2 concentric radial rings (zero gap, zero center pole pinch)
         const sqCorners = [0, 5, 10, 15].map(idx => cen.clone().lerp(outer[idx], 0.30));
         const innerRing = [];
         for (let q = 0; q < 4; q++) {
@@ -404,3 +400,4 @@
     }
   };
 })();
+
