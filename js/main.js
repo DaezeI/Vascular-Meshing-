@@ -19,11 +19,7 @@
     D: window.AAA_DATA,
     renderer, scene, camera, controls, wrap,
     clipPlane: new THREE.Plane(new THREE.Vector3(0, -1, 0), 9999),
-    groups: {
-      start: new THREE.Group(),
-      branchA: new THREE.Group(),
-      branchB: new THREE.Group(),
-    },
+    groups: { start: new THREE.Group(), branchA: new THREE.Group(), branchB: new THREE.Group() },
     activeTab: 'start',
     speed: 0.5,
     modules: {},
@@ -31,41 +27,29 @@
   };
 
   scene.add(APP.groups.start, APP.groups.branchA, APP.groups.branchB);
-  try {
-    const raw = localStorage.getItem('aaa_cam_v3');
-    if (raw) APP.savedCam = JSON.parse(raw);
-  } catch (e) {}
+  try { const raw = localStorage.getItem('aaa_cam_v3'); if (raw) APP.savedCam = JSON.parse(raw); } catch (e) {}
 
   APP.buildIndexed = function (obj) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(obj.v, 3));
-    g.setIndex(obj.i);
-    g.computeVertexNormals();
+    g.setIndex(obj.i); g.computeVertexNormals();
     return g;
   };
-
   APP.makeSliceGroup = function (coords, fillHex, wireHex) {
     const grp = new THREE.Group();
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(coords, 3));
     g.computeVertexNormals();
     grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: fillHex, side: THREE.DoubleSide })));
-    grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({
-      color: wireHex, wireframe: true, transparent: true, opacity: 0.38
-    })));
+    grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: wireHex, wireframe: true, transparent: true, opacity: 0.38 })));
     grp.visible = false;
     return grp;
   };
-
   APP.smoothstep = function (t) { return t * t * (3 - 2 * t); };
-
   APP.setSpeed = function (s) {
     APP.speed = s;
-    document.querySelectorAll('.speed-btn').forEach(b => {
-      b.classList.toggle('active', parseFloat(b.dataset.speed) === s);
-    });
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('active', parseFloat(b.dataset.speed) === s));
   };
-
   APP.setCameraPreset = function (preset) {
     const mod = APP.modules[APP.activeTab];
     if (mod && mod.overridePreset && mod.overridePreset(preset)) return;
@@ -76,31 +60,23 @@
     if (preset === 'topcut') camera.position.set(span * 0.22, span * 1.15, span * 0.85);
     controls.update();
   };
-
   APP.savePreferredCamera = function () {
-    APP.savedCam = {
-      pos: [camera.position.x, camera.position.y, camera.position.z],
-      tgt: [controls.target.x, controls.target.y, controls.target.z],
-    };
+    APP.savedCam = { pos: [camera.position.x, camera.position.y, camera.position.z], tgt: [controls.target.x, controls.target.y, controls.target.z] };
     try { localStorage.setItem('aaa_cam_v3', JSON.stringify(APP.savedCam)); } catch (e) {}
-    const b = document.getElementById('btn-save-cam');
-    b.textContent = 'Saved!';
+    const b = document.getElementById('btn-save-cam'); b.textContent = 'Saved!';
     setTimeout(() => b.textContent = 'Set Current as Default', 1300);
   };
-
   APP.resetCamera = function () {
     const mod = APP.modules[APP.activeTab];
     if (mod && mod.onResetCamera && mod.onResetCamera()) return;
     if (APP.savedCam) {
-      camera.position.set(...APP.savedCam.pos);
-      controls.target.set(...APP.savedCam.tgt);
-      controls.update();
-      return;
+      camera.position.set(...APP.savedCam.pos); controls.target.set(...APP.savedCam.tgt); controls.update(); return;
     }
     APP.setCameraPreset('front');
   };
-
   APP.goTab = function (tab) {
+    const prevMod = APP.modules[APP.activeTab];
+    if (prevMod && prevMod.onExit) prevMod.onExit();
     APP.activeTab = tab;
     ['start', 'branchA', 'branchB', 'compare'].forEach(t => {
       document.getElementById('btn-tab-' + t).classList.toggle('active', t === tab);
@@ -114,15 +90,11 @@
     if (mod && mod.onEnter) mod.onEnter();
     APP.resetCamera();
   };
-
   function onResize() {
     const w = wrap.clientWidth, h = wrap.clientHeight;
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
+    camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h);
   }
   window.addEventListener('resize', onResize);
-
   APP.init = function () {
     onResize();
     if (APP.D) {
@@ -138,22 +110,17 @@
     APP.goTab('start');
     requestAnimationFrame(loop);
   };
-
   function loop(now) {
     requestAnimationFrame(loop);
     controls.update();
     const mod = APP.modules[APP.activeTab];
     if (mod && mod.update) mod.update(now);
-
     if (APP.activeTab === 'compare' && APP.modules.compare.renderSplit) {
       APP.modules.compare.renderSplit();
     } else {
       const w = wrap.clientWidth, h = wrap.clientHeight;
-      renderer.setScissorTest(false);
-      renderer.setViewport(0, 0, w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.render(scene, camera);
+      renderer.setScissorTest(false); renderer.setViewport(0, 0, w, h);
+      camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.render(scene, camera);
     }
   }
 })();

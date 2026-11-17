@@ -2,16 +2,22 @@
   const APP = window.APP;
   const grp = APP.groups.start;
   let subMode = 'scan'; // 'scan' | 'physics'
-  let scanGrp = new THREE.Group(), physGrp = new THREE.Group();
-  grp.add(scanGrp, physGrp);
-
+  let physState = 'healthy'; // 'healthy' | 'slivers' | 'inverted'
   let mWall, mCaps, capSpheres = [], highlightRing;
-  let s2Loop = true, s2Clock = 0, s2TetPos, s2TetGeom, s2TetMat, s2EdgePos, s2EdgeGeom, flowArrows = [];
-  const s2Base = [
-    new THREE.Vector3(-0.65, -1.48, -0.45),
-    new THREE.Vector3( 0.65, -1.48, -0.45),
-    new THREE.Vector3( 0.00, -1.48,  0.55),
-  ];
+
+  // Create clean 2D canvas overlay inside viewport-wrap for Mode B
+  const c2d = document.createElement('canvas');
+  c2d.id = 'canvas2d-physics';
+  c2d.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:5;background:radial-gradient(circle at 50% 45%,#132038 0%,#070c17 100%);display:none;';
+  APP.wrap.appendChild(c2d);
+  const ctx = c2d.getContext('2d');
+
+  // Blood flow particles for 2D visual
+  const particles = Array.from({ length: 75 }, (_, i) => ({
+    u: (i * 0.137) % 1,
+    v: ((i * 0.293) % 1) * 2 - 1, // -1 (top wall) to +1 (bottom wall)
+    jitter: (i % 7) * 0.9
+  }));
 
   function buildPanel() {
     const D = APP.D;
@@ -23,7 +29,7 @@
       <div class="kicker">Shared Starting Point &amp; Rules</div>
       <div class="title">From Hollow CT Skin to Simulation Rules</div>
       <p class="copy">
-        Stage 1 produces a <b>hollow surface skin</b> (<code>AAA_model.stl</code>: 161,944 triangles) with 11 flat inlet/outlet caps. Before comparing <b>Branch A</b> and <b>Branch B</b>, switch below to see both the anatomy and why blood physics rejects bad shapes.
+        Stage 1 produces a <b>hollow triangle skin</b> (<code>AAA_model.stl</code>) with 11 flat inlet/outlet caps. Switch below to inspect the anatomy and see why blood-flow solvers care about element shapes.
       </p>
       <div class="card">
         <div class="sec-lbl">Start View</div>
@@ -45,22 +51,20 @@
 
       <div id="st-phys-controls" class="hidden">
         <div class="card">
-          <div class="sec-lbl">Distort One Boundary-Layer Cell</div>
-          <p class="copy" style="font-size:12px;margin-top:0;margin-bottom:8px;">
-            Blood drops sharply to zero speed at the wall (<b>Wall Shear Stress</b>). Solvers map a textbook pyramid onto every cell via a <b>Jacobian</b>—squished or flipped cells break the math:
-          </p>
-          <input type="range" id="st-slider" min="-0.22" max="1.00" step="0.01" value="1.00" oninput="APP.modules.start.onPhysSlider()" />
-          <div class="row" style="margin-top:8px;">
-            <button class="btn" id="st-loop-btn" onclick="APP.modules.start.toggleLoop()">Pause</button>
-            <button class="btn" onclick="APP.modules.start.setPhysVal(1.0)">Healthy</button>
-            <button class="btn" onclick="APP.modules.start.setPhysVal(0.06)">Pancake</button>
-            <button class="btn btn-danger" onclick="APP.modules.start.setPhysVal(-0.16)">Inverted</button>
+          <div class="sec-lbl">Pick a Mesh Condition</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <button class="btn active" id="st-p-healthy" onclick="APP.modules.start.setPhys('healthy')">1. Healthy Clean Mesh (Gamma &rarr; 1.0)</button>
+            <button class="btn" id="st-p-slivers" onclick="APP.modules.start.setPhys('slivers')">2. Squished Needle Cells (Gamma &approx; 0)</button>
+            <button class="btn btn-danger" id="st-p-inverted" onclick="APP.modules.start.setPhys('inverted')">3. Folded Bowtie Cell (minSICN &lt; 0)</button>
           </div>
         </div>
         <div class="card">
-          <div class="row"><span>Shape (Gamma):</span> <strong id="st-gamma">1.00</strong></div>
-          <div class="row"><span>Orientation (minSICN):</span> <strong id="st-sicn">+1.00</strong></div>
-          <div class="row"><span>CFD Solver:</span> <span id="st-status" class="pill">VALID WSS &amp; CONVERGING</span></div>
+          <div class="sec-lbl">What Happens to Blood Flow</div>
+          <p class="copy" id="st-phys-copy" style="margin-top:0;font-size:12.2px;"></p>
+          <div class="row" style="margin-top:8px;">
+            <span>Solver Status:</span>
+            <span id="st-phys-pill" class="pill">CONVERGED</span>
+          </div>
         </div>
       </div>
     `;
@@ -68,81 +72,194 @@
 
   function init3D() {
     const D = APP.D;
-    if (D) {
-      mWall = new THREE.Mesh(APP.buildIndexed(D.rawWall), new THREE.MeshStandardMaterial({
-        color: 0x94a3b8, roughness: 0.55, side: THREE.DoubleSide
-      }));
-      mCaps = new THREE.Mesh(APP.buildIndexed(D.rawCaps), new THREE.MeshStandardMaterial({
-        color: 0x22d3ee, emissive: 0x083344, roughness: 0.35, side: THREE.DoubleSide
-      }));
-      scanGrp.add(mWall, mCaps);
+    if (!D) return;
+    mWall = new THREE.Mesh(APP.buildIndexed(D.rawWall), new THREE.MeshStandardMaterial({
+      color: 0x94a3b8, roughness: 0.55, side: THREE.DoubleSide
+    }));
+    mCaps = new THREE.Mesh(APP.buildIndexed(D.rawCaps), new THREE.MeshStandardMaterial({
+      color: 0x22d3ee, emissive: 0x083344, roughness: 0.35, side: THREE.DoubleSide
+    }));
+    grp.add(mWall, mCaps);
 
-      const sg = new THREE.SphereGeometry(0.22, 16, 16);
-      D.capLabels.forEach(c => {
-        const sm = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.45 }));
-        sm.position.set(...c.p);
-        scanGrp.add(sm);
-        capSpheres.push(sm);
-      });
-      highlightRing = new THREE.Mesh(
-        new THREE.SphereGeometry(0.42, 20, 20),
-        new THREE.MeshBasicMaterial({ color: 0xfacc15, wireframe: true })
-      );
-      highlightRing.visible = false;
-      scanGrp.add(highlightRing);
-    }
-
-    // Physics blood-flow cutaway pipe
-    const pipe = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.6, 1.6, 5.4, 32, 1, true, Math.PI, Math.PI),
-      new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.5, side: THREE.DoubleSide })
-    );
-    pipe.rotation.z = Math.PI / 2; pipe.rotation.x = Math.PI / 2;
-    physGrp.add(pipe);
-    for (let k = 1; k <= 5; k++) {
-      const arc = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.6 - k*0.065, 1.6 - k*0.065, 5.38, 28, 1, true, Math.PI, Math.PI),
-        new THREE.MeshBasicMaterial({ color: 0xfacc15, wireframe: true, transparent: true, opacity: 0.35 })
-      );
-      arc.rotation.z = Math.PI / 2; arc.rotation.x = Math.PI / 2;
-      physGrp.add(arc);
-    }
-    [-1.42, -1.20, -0.85, -0.42, 0.0, 0.42, 0.85, 1.20, 1.42].forEach((ry, idx) => {
-      const nr = Math.abs(ry) / 1.55;
-      const len = Math.max(0.18, 2.2 * (1 - nr*nr));
-      const col = Math.abs(ry) > 1.15 ? 0xfacc15 : 0xa855f7;
-      const arr = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(-len*0.5-0.6, ry, 0.05), len, col, 0.24, 0.14);
-      physGrp.add(arr);
-      flowArrows.push({ arr, baseLen: len, baseCol: col });
+    const sg = new THREE.SphereGeometry(0.22, 16, 16);
+    D.capLabels.forEach(c => {
+      const sm = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.45 }));
+      sm.position.set(...c.p);
+      grp.add(sm);
+      capSpheres.push(sm);
     });
-
-    s2TetPos = new Float32Array(12 * 3);
-    s2TetGeom = new THREE.BufferGeometry();
-    s2TetGeom.setAttribute('position', new THREE.BufferAttribute(s2TetPos, 3));
-    s2TetMat = new THREE.MeshStandardMaterial({ color: 0x34d399, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-    physGrp.add(new THREE.Mesh(s2TetGeom, s2TetMat));
-
-    s2EdgePos = new Float32Array(6 * 2 * 3);
-    s2EdgeGeom = new THREE.BufferGeometry();
-    s2EdgeGeom.setAttribute('position', new THREE.BufferAttribute(s2EdgePos, 3));
-    physGrp.add(new THREE.LineSegments(s2EdgeGeom, new THREE.LineBasicMaterial({ color: 0xffffff })));
-    physGrp.visible = false;
+    highlightRing = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, 20, 20),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15, wireframe: true })
+    );
+    highlightRing.visible = false;
+    grp.add(highlightRing);
   }
 
-  const mod = {
-    init() { buildPanel(); init3D(); this.onPhysSlider(); },
+  function drawPhysics2D(now) {
+    const rect = APP.wrap.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (c2d.width !== Math.floor(rect.width * dpr) || c2d.height !== Math.floor(rect.height * dpr)) {
+      c2d.width = Math.floor(rect.width * dpr);
+      c2d.height = Math.floor(rect.height * dpr);
+    }
+    const W = c2d.width, H = c2d.height;
+    ctx.save();
+    ctx.clearRect(0, 0, W, H);
+
+    const x0 = W * 0.08, x1 = W * 0.92, pipeW = x1 - x0;
+    const yMid = H * 0.50, halfH = Math.min(H * 0.25, 160 * dpr);
+    const yTop = yMid - halfH, yBot = yMid + halfH;
+
+    // Wall shear glow band
+    ctx.fillStyle = physState === 'inverted' ? 'rgba(251,113,133,0.12)' : 'rgba(56,189,248,0.10)';
+    ctx.fillRect(x0, yTop, pipeW, halfH * 2);
+
+    // Build 2D artery mesh grid (cols x rows: 2 top BL rows, 4 core rows, 2 bottom BL rows)
+    const cols = 12;
+    const rowFracs = [-1.0, -0.90, -0.78, -0.38, 0.0, 0.38, 0.78, 0.90, 1.0];
+    const pts = [];
+    for (let r = 0; r < rowFracs.length; r++) {
+      const row = [];
+      for (let c = 0; c <= cols; c++) {
+        let px = x0 + (c / cols) * pipeW;
+        let py = yMid + rowFracs[r] * halfH;
+        // Distort specific cells in slivers / inverted modes
+        if (physState === 'slivers') {
+          if (r === 6 && c >= 5 && c <= 7) py = yMid + 0.875 * halfH; // razor thin gap against wall
+          if (r === 5 && c === 6) py = yMid + 0.84 * halfH;
+        } else if (physState === 'inverted') {
+          if (r === 7 && c === 6) py = yMid + 0.68 * halfH; // inner BL node shoots past next row -> folded bowtie!
+          if (r === 6 && c === 6) py = yMid + 0.95 * halfH;
+        }
+        row.push({ x: px, y: py });
+      }
+      pts.push(row);
+    }
+
+    // Draw mesh cells
+    for (let r = 0; r < rowFracs.length - 1; r++) {
+      const isBL = (r <= 1 || r >= 6);
+      for (let c = 0; c < cols; c++) {
+        const p00 = pts[r][c], p10 = pts[r][c+1], p01 = pts[r+1][c], p11 = pts[r+1][c+1];
+        const isBadZone = (physState !== 'healthy') && (r >= 5 && r <= 7 && c >= 5 && c <= 6);
+
+        if (isBL) {
+          ctx.beginPath();
+          ctx.moveTo(p00.x, p00.y); ctx.lineTo(p10.x, p10.y);
+          ctx.lineTo(p11.x, p11.y); ctx.lineTo(p01.x, p01.y);
+          ctx.closePath();
+          ctx.fillStyle = isBadZone
+            ? (physState === 'inverted' ? 'rgba(251,113,133,0.48)' : 'rgba(250,204,21,0.32)')
+            : 'rgba(250,204,21,0.16)';
+          ctx.fill();
+          ctx.strokeStyle = isBadZone ? (physState === 'inverted' ? '#fb7185' : '#facc15') : 'rgba(250,204,21,0.55)';
+          ctx.lineWidth = isBadZone ? 2.2 * dpr : 1.1 * dpr;
+          ctx.stroke();
+        } else {
+          // Draw 2 core triangles per quad
+          [[p00, p10, p11], [p00, p11, p01]].forEach(tri => {
+            ctx.beginPath();
+            ctx.moveTo(tri[0].x, tri[0].y); ctx.lineTo(tri[1].x, tri[1].y); ctx.lineTo(tri[2].x, tri[2].y);
+            ctx.closePath();
+            ctx.fillStyle = isBadZone ? 'rgba(250,204,21,0.22)' : 'rgba(168,85,247,0.14)';
+            ctx.fill();
+            ctx.strokeStyle = isBadZone ? '#facc15' : 'rgba(168,85,247,0.5)';
+            ctx.lineWidth = isBadZone ? 2.0 * dpr : 1.0 * dpr;
+            ctx.stroke();
+          });
+        }
+      }
+    }
+
+    // Thick outer artery walls
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 4 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(x0, yTop); ctx.lineTo(x1, yTop);
+    ctx.moveTo(x0, yBot); ctx.lineTo(x1, yBot);
+    ctx.stroke();
+
+    // Update & draw flowing blood particles
+    const speedScale = physState === 'healthy' ? 0.0022 : (physState === 'slivers' ? 0.0007 : 0.0);
+    particles.forEach(pt => {
+      const parabolic = Math.max(0.12, 1 - pt.v * pt.v);
+      pt.u = (pt.u + speedScale * parabolic) % 1.0;
+      let px = x0 + pt.u * pipeW;
+      let py = yMid + pt.v * halfH * 0.92;
+      if (physState === 'slivers' && Math.abs(px - (x0 + pipeW*0.5)) < pipeW*0.14 && pt.v > 0.4) {
+        py += Math.sin(now * 0.025 + pt.jitter) * 6 * dpr;
+      }
+      ctx.beginPath();
+      ctx.arc(px, py, (Math.abs(pt.v) > 0.78 ? 3.5 : 4.5) * dpr, 0, Math.PI * 2);
+      ctx.fillStyle = physState === 'inverted' ? '#fb7185' : (Math.abs(pt.v) > 0.78 ? '#facc15' : '#38bdf8');
+      ctx.fill();
+    });
+
+    // Annotations
+    ctx.font = `700 ${13*dpr}px system-ui, sans-serif`;
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillText('INLET (Blood Enters)', x0, yTop - 14 * dpr);
+    ctx.fillText('OUTLET (Blood Exits)', x1 - 150 * dpr, yTop - 14 * dpr);
+    ctx.fillStyle = '#facc15';
+    ctx.fillText('Thin Wall Layers (Measure Wall Shear Stress)', x0, yBot + 24 * dpr);
+
+    if (physState === 'slivers') {
+      const bx = x0 + pipeW * 0.5, by = yBot - halfH * 0.14;
+      ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2 * dpr;
+      ctx.beginPath(); ctx.arc(bx, by, (26 + 6*Math.sin(now*0.008)) * dpr, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#fde68a';
+      ctx.fillText('Needle Slivers (Gamma ≈ 0): Near-zero area spikes errors!', bx - 165 * dpr, yTop + 28 * dpr);
+    } else if (physState === 'inverted') {
+      const bx = x0 + pipeW * 0.5, by = yBot - halfH * 0.16;
+      ctx.strokeStyle = '#ff1e42'; ctx.lineWidth = 3 * dpr;
+      ctx.beginPath(); ctx.arc(bx, by, 30 * dpr, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#fb7185';
+      ctx.fillText('FOLDED INSIDE-OUT (minSICN < 0): Negative area halts CFD!', bx - 175 * dpr, yTop + 28 * dpr);
+    } else {
+      ctx.fillStyle = '#34d399';
+      ctx.fillText('Smooth Parabolic Flow: Fast in Center, Slow at Wall', x0 + pipeW * 0.30, yTop + 28 * dpr);
+    }
+
+    ctx.restore();
+  }
+
+  APP.modules.start = {
+    init() { buildPanel(); init3D(); this.setPhys('healthy'); },
     setSub(m) {
       subMode = m;
       document.getElementById('st-btn-scan').classList.toggle('active', m === 'scan');
       document.getElementById('st-btn-phys').classList.toggle('active', m === 'physics');
       document.getElementById('st-scan-controls').classList.toggle('hidden', m !== 'scan');
       document.getElementById('st-phys-controls').classList.toggle('hidden', m !== 'physics');
-      scanGrp.visible = (m === 'scan');
-      physGrp.visible = (m === 'physics');
+      c2d.style.display = (m === 'physics') ? 'block' : 'none';
+      document.querySelector('.cam-bar').style.display = (m === 'physics') ? 'none' : 'flex';
+      grp.visible = (m === 'scan');
       APP.resetCamera();
       document.getElementById('hud-left').textContent = (m === 'scan')
         ? 'Shared Input: Raw STL Wall (ID 1) + 11 Named Caps (IDs 2–12)'
-        : 'Shared Goal: Capture Steep Wall Velocity Drop Without Inverted Cells';
+        : 'Why Quality Matters: Filled 2D Artery Mesh + Flowing Blood Simulation';
+    },
+    setPhys(state) {
+      physState = state;
+      ['healthy', 'slivers', 'inverted'].forEach(k => {
+        document.getElementById('st-p-' + k).classList.toggle('active', k === state);
+      });
+      const copy = document.getElementById('st-phys-copy');
+      const pill = document.getElementById('st-phys-pill');
+      if (state === 'healthy') {
+        copy.innerHTML = 'Plump core triangles + clean thin wall layers let the solver compute smooth blood speed and accurate <b>Wall Shear Stress</b>.';
+        pill.textContent = 'CONVERGED';
+        pill.style.background = 'rgba(52,211,153,0.2)'; pill.style.color = '#34d399';
+      } else if (state === 'slivers') {
+        copy.innerHTML = 'Squished needle cells have almost zero area/volume. Because CFD divides by element volume, roundoff errors blow up and stall convergence.';
+        pill.textContent = 'STALLED (Gamma ≈ 0)';
+        pill.style.background = 'rgba(250,204,21,0.2)'; pill.style.color = '#facc15';
+      } else {
+        copy.innerHTML = 'Two wall edges crossed over each other like a bowtie! An inside-out cell has <b>negative mathematical volume</b>, crashing finite-element solvers instantly.';
+        pill.textContent = 'CFD CRASH! (minSICN < 0)';
+        pill.style.background = 'rgba(251,113,133,0.2)'; pill.style.color = '#fb7185';
+      }
     },
     syncScan() {
       if (!APP.D) return;
@@ -156,79 +273,19 @@
       if (!APP.D) return;
       const c = APP.D.capLabels[idx];
       document.querySelectorAll('.cap-chip').forEach((el, i) => el.classList.toggle('active', i === idx));
-      highlightRing.visible = true;
-      highlightRing.position.set(...c.p);
+      highlightRing.visible = true; highlightRing.position.set(...c.p);
       APP.controls.target.set(...c.p);
-      APP.camera.position.set(c.p[0] + 2.5, c.p[1] + 1.8, c.p[2] + 4.0);
+      APP.camera.position.set(c.p[0]+2.5, c.p[1]+1.8, c.p[2]+4.0);
       APP.controls.update();
       document.getElementById('hud-left').textContent = `Cap #${idx+1}/11: ${c.name}`;
     },
-    setPhysVal(v) {
-      s2Loop = false;
-      document.getElementById('st-loop-btn').textContent = 'Play';
-      document.getElementById('st-slider').value = v;
-      this.onPhysSlider();
-    },
-    toggleLoop() {
-      s2Loop = !s2Loop;
-      document.getElementById('st-loop-btn').textContent = s2Loop ? 'Pause' : 'Play';
-    },
-    onPhysSlider() {
-      const h = parseFloat(document.getElementById('st-slider').value);
-      const apex = new THREE.Vector3(0, -1.48 + h * 1.05, 0.03);
-      const pts = [s2Base[0], s2Base[1], s2Base[2], apex];
-      let o = 0;
-      [[0,1,2],[0,1,3],[1,2,3],[2,0,3]].forEach(f => f.forEach(vi => {
-        s2TetPos[o++]=pts[vi].x; s2TetPos[o++]=pts[vi].y; s2TetPos[o++]=pts[vi].z;
-      }));
-      s2TetGeom.attributes.position.needsUpdate = true;
-      s2TetGeom.computeVertexNormals();
-      let eo = 0;
-      [[0,1],[1,2],[2,0],[0,3],[1,3],[2,3]].forEach(([a,b]) => {
-        s2EdgePos[eo++]=pts[a].x; s2EdgePos[eo++]=pts[a].y; s2EdgePos[eo++]=pts[a].z;
-        s2EdgePos[eo++]=pts[b].x; s2EdgePos[eo++]=pts[b].y; s2EdgePos[eo++]=pts[b].z;
-      });
-      s2EdgeGeom.attributes.position.needsUpdate = true;
-      const gam = Math.min(1, Math.abs(h)*1.2 / (0.14 + Math.abs(h)));
-      const sicn = h >= 0 ? Math.min(1, h*1.05) : Math.max(-1, h*0.85);
-      document.getElementById('st-gamma').textContent = gam.toFixed(2);
-      document.getElementById('st-sicn').textContent = (sicn >= 0 ? '+' : '') + sicn.toFixed(2);
-      const st = document.getElementById('st-status'), wa = flowArrows[0];
-      if (h <= 0.005) {
-        s2TetMat.color.setHex(0xfb7185);
-        st.textContent = 'CFD CRASH! Negative Volume';
-        st.style.background = 'rgba(251,113,133,0.2)'; st.style.color = '#fb7185';
-        wa.arr.setDirection(new THREE.Vector3(-1,0,0)); wa.arr.setColor(0xfb7185); wa.arr.setLength(0.75,0.25,0.14);
-      } else if (h < 0.24) {
-        s2TetMat.color.setHex(0xfacc15);
-        st.textContent = 'WSS ERROR / STALLED';
-        st.style.background = 'rgba(250,204,21,0.2)'; st.style.color = '#facc15';
-        wa.arr.setDirection(new THREE.Vector3(1,0.35,0).normalize()); wa.arr.setColor(0xfacc15); wa.arr.setLength(0.42,0.2,0.12);
-      } else {
-        s2TetMat.color.setHex(0x34d399);
-        st.textContent = 'VALID WSS & CONVERGING';
-        st.style.background = 'rgba(52,211,153,0.2)'; st.style.color = '#34d399';
-        wa.arr.setDirection(new THREE.Vector3(1,0,0)); wa.arr.setColor(wa.baseCol); wa.arr.setLength(wa.baseLen,0.24,0.14);
-      }
-    },
     onEnter() { this.setSub(subMode); },
-    onResetCamera() {
-      if (subMode === 'physics') {
-        APP.camera.position.set(0.4, 2.2, 6.2);
-        APP.controls.target.set(0, 0.1, 0);
-        APP.controls.update();
-        return true;
-      }
-      return false;
+    onExit() {
+      c2d.style.display = 'none';
+      document.querySelector('.cam-bar').style.display = 'flex';
     },
-    overridePreset() { return subMode === 'physics'; },
-    update() {
-      if (subMode === 'physics' && s2Loop) {
-        s2Clock += 0.011 * APP.speed * 2;
-        document.getElementById('st-slider').value = (0.39 + 0.61 * Math.cos(s2Clock)).toFixed(2);
-        this.onPhysSlider();
-      }
+    update(now) {
+      if (subMode === 'physics') drawPhysics2D(now);
     }
   };
-  APP.modules.start = mod;
 })();
