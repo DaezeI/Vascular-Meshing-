@@ -2,7 +2,7 @@
   const APP = window.APP;
   const grp = APP.groups.branchB;
 
-  let stage = 'b1'; // 'b1' | 'b2'
+  let stage = 'b1';
   let b1Play = true, b1Prog = 0;
   let gB1 = new THREE.Group(), gB2 = new THREE.Group();
   grp.add(gB1, gB2);
@@ -16,11 +16,11 @@
     0xfb923c, 0xa78bfa, 0x4ade80, 0xf87171, 0xe879f9
   ];
 
-  // Shared helper: Lofts real SimVascular contours of 0039_H_ABAO_AAA into Zhang's structured QUAD skin + concentric hex slice rings!
+  // Builds Zhang-style smooth NURBS-like quad skin + exact watertight O-grid brick cross-sections
   APP.buildZhangFromContours = function (clipPlaneRef) {
     const D = APP.D;
     const out = new THREE.Group();
-    const pairs = [];
+    const vesselSkins = [];
     if (!D) return { group: out, updateCut: () => {} };
 
     function toVecs(flat) {
@@ -30,11 +30,8 @@
     }
     function resampleClosed(pts, N) {
       const len = [0];
-      for (let i = 0; i < pts.length; i++) {
-        len.push(len[i] + pts[i].distanceTo(pts[(i+1)%pts.length]));
-      }
-      const total = len[pts.length] || 1;
-      const res = [];
+      for (let i = 0; i < pts.length; i++) len.push(len[i] + pts[i].distanceTo(pts[(i+1)%pts.length]));
+      const total = len[pts.length] || 1, res = [];
       for (let k = 0; k < N; k++) {
         const target = (k / N) * total;
         let seg = 0;
@@ -45,8 +42,7 @@
       return res;
     }
     function alignRing(prev, curr) {
-      const N = prev.length;
-      let best = curr, bestErr = Infinity;
+      const N = prev.length; let best = curr, bestErr = Infinity;
       for (const rev of [false, true]) {
         const arr = rev ? [...curr].reverse() : curr;
         for (let sh = 0; sh < N; sh++) {
@@ -61,49 +57,90 @@
       return best;
     }
     function centroid(pts) {
-      const c = new THREE.Vector3();
-      pts.forEach(p => c.add(p));
-      return c.divideScalar(pts.length || 1);
+      const c = new THREE.Vector3(); pts.forEach(p => c.add(p)); return c.divideScalar(pts.length || 1);
+    }
+    function catmullVec(p0, p1, p2, p3, t) {
+      const t2 = t * t, t3 = t2 * t;
+      return new THREE.Vector3(
+        0.5 * ((2*p1.x) + (-p0.x + p2.x)*t + (2*p0.x - 5*p1.x + 4*p2.x - p3.x)*t2 + (-p0.x + 3*p1.x - 3*p2.x + p3.x)*t3),
+        0.5 * ((2*p1.y) + (-p0.y + p2.y)*t + (2*p0.y - 5*p1.y + 4*p2.y - p3.y)*t2 + (-p0.y + 3*p1.y - 3*p2.y + p3.y)*t3),
+        0.5 * ((2*p1.z) + (-p0.z + p2.z)*t + (2*p0.z - 5*p1.z + 4*p2.z - p3.z)*t2 + (-p0.z + 3*p1.z - 3*p2.z + p3.z)*t3)
+      );
     }
 
     const N = 20;
-    const skinPos = [], skinIdx = [], quadLines = [];
-    const vesselColors = {
-      aorta: 0x38bdf8, r_iliac: 0x34d399, l_in_iliac: 0x2dd4bf, r_in_iliac: 0x2dd4bf
-    };
+    const quadLines = [];
+    const vesselColors = { aorta: 0x38bdf8, r_iliac: 0x34d399, l_in_iliac: 0x2dd4bf, r_in_iliac: 0x2dd4bf };
+
+    const aortaRingsInfo = [];
+    const aortaSc = D.svContours.find(s => s.id === 'aorta');
+    if (aortaSc) {
+      aortaSc.rings.forEach(rFlat => {
+        const pts = toVecs(rFlat), c = centroid(pts);
+        const rAvg = pts.reduce((acc, p) => acc + p.distanceTo(c), 0) / pts.length;
+        aortaRingsInfo.push({ c, r: rAvg });
+      });
+    }
+    function insideAorta(pt) {
+      for (let i = 0; i < aortaRingsInfo.length; i++) {
+        if (pt.distanceTo(aortaRingsInfo[i].c) < aortaRingsInfo[i].r * 0.86) return true;
+      }
+      return false;
+    }
 
     D.svContours.forEach(sc => {
-      if (sc.rings.length < 2) return;
+      let rawRings = sc.rings.map(rFlat => toVecs(rFlat));
+      if (sc.id !== 'aorta' && aortaRingsInfo.length) {
+        rawRings = rawRings.filter(pts => !insideAorta(centroid(pts)));
+      }
+      if (rawRings.length < 2) return;
+
+      // Align all rings sequentially
+      const aligned = [resampleClosed(rawRings[0], N)];
+      for (let k = 1; k < rawRings.length; k++) {
+        aligned.push(alignRing(aligned[k - 1], resampleClosed(rawRings[k], N)));
+      }
+
+      // Smooth Catmull-Rom subdivision (3 sub-steps per contour interval) for NURBS-smooth curvature
+      const smoothRings = [];
+      for (let k = 0; k < aligned.length - 1; k++) {
+        const cA = centroid(aligned[k]), cB = centroid(aligned[k + 1]);
+        if (cA.distanceTo(cB) >= 3.2) { smoothRings.push(null); continue; }
+        const r0 = aligned[Math.max(0, k - 1)];
+        const r1 = aligned[k];
+        const r2 = aligned[k + 1];
+        const r3 = aligned[Math.min(aligned.length - 1, k + 2)];
+        const steps = 3;
+        for (let s = 0; s < steps; s++) {
+          const t = s / steps;
+          smoothRings.push(r1.map((_, j) => catmullVec(r0[j], r1[j], r2[j], r3[j], t)));
+        }
+      }
+      smoothRings.push(aligned[aligned.length - 1]);
+
       const colHex = vesselColors[sc.id] || 0x22d3ee;
-      const vPos = [], vIdx = [];
-      let prevR = resampleClosed(toVecs(sc.rings[0]), N);
-      let prevC = centroid(prevR);
-      let baseIdx = 0;
-      prevR.forEach(p => vPos.push(p.x, p.y, p.z));
+      const vPos = [], vIdx = [], skinTris = [];
+      let prevR = null, baseIdx = 0;
 
-      for (let k = 1; k < sc.rings.length; k++) {
-        let curR = resampleClosed(toVecs(sc.rings[k]), N);
-        curR = alignRing(prevR, curR);
-        const curC = centroid(curR);
-        const gap = prevC.distanceTo(curC);
-
+      for (let k = 0; k < smoothRings.length; k++) {
+        const curR = smoothRings[k];
+        if (!curR) { prevR = null; continue; }
         const curBase = vPos.length / 3;
         curR.forEach(p => vPos.push(p.x, p.y, p.z));
-
-        if (gap < 3.2) {
-          pairs.push({ rA: prevR, rB: curR, cA: prevC, cB: curC, col: colHex });
+        if (prevR) {
           for (let j = 0; j < N; j++) {
             const jn = (j + 1) % N;
             const a = baseIdx + j, b = baseIdx + jn, c = curBase + j, d = curBase + jn;
             vIdx.push(a, b, d, a, d, c);
-            // Only quad ring & longitudinal lines — NO diagonal triangle edges!
+            skinTris.push([prevR[j], prevR[jn], curR[jn]], [prevR[j], curR[jn], curR[j]]);
             quadLines.push(prevR[j].x, prevR[j].y, prevR[j].z, prevR[jn].x, prevR[jn].y, prevR[jn].z);
             quadLines.push(prevR[j].x, prevR[j].y, prevR[j].z, curR[j].x, curR[j].y, curR[j].z);
           }
         }
-        prevR = curR; prevC = curC; baseIdx = curBase;
+        prevR = curR; baseIdx = curBase;
       }
 
+      vesselSkins.push({ tris: skinTris });
       const sg = new THREE.BufferGeometry();
       sg.setAttribute('position', new THREE.Float32BufferAttribute(vPos, 3));
       sg.setIndex(vIdx); sg.computeVertexNormals();
@@ -116,10 +153,9 @@
     const qg = new THREE.BufferGeometry();
     qg.setAttribute('position', new THREE.Float32BufferAttribute(quadLines, 3));
     out.add(new THREE.LineSegments(qg, new THREE.LineBasicMaterial({
-      color: 0xe0f2fe, transparent: true, opacity: 0.55, clippingPlanes: [clipPlaneRef]
+      color: 0xe0f2fe, transparent: true, opacity: 0.45, clippingPlanes: [clipPlaneRef]
     })));
 
-    // Dynamic radial hex-brick cross-section slice group
     const sliceGrp = new THREE.Group();
     out.add(sliceGrp);
 
@@ -129,31 +165,75 @@
         ch.geometry.dispose(); ch.material.dispose();
       }
       if (!enabled) return;
+
       const fillPos = [], brickLines = [];
-      pairs.forEach(pr => {
-        const yA = pr.cA.y, yB = pr.cB.y;
-        if ((yA <= cutY && yB >= cutY) || (yB <= cutY && yA >= cutY)) {
-          if (Math.abs(yB - yA) < 1e-5) return;
-          const t = (cutY - yA) / (yB - yA);
-          const cen = pr.cA.clone().lerp(pr.cB, t);
-          const ring = pr.rA.map((p, j) => p.clone().lerp(pr.rB[j], t));
-          for (let j = 0; j < N; j++) {
-            const jn = (j + 1) % N;
-            fillPos.push(cen.x, cutY, cen.z, ring[j].x, cutY, ring[j].z, ring[jn].x, cutY, ring[jn].z);
-            // 3 concentric structured hex-brick rings + radial spokes!
-            [0.34, 0.68, 1.0].forEach(rf => {
-              const p0 = cen.clone().lerp(ring[j], rf);
-              const p1 = cen.clone().lerp(ring[jn], rf);
-              brickLines.push(p0.x, cutY, p0.z, p1.x, cutY, p1.z);
-            });
-            brickLines.push(cen.x, cutY, cen.z, ring[j].x, cutY, ring[j].z);
+      vesselSkins.forEach(vs => {
+        const pts = [];
+        vs.tris.forEach(tri => {
+          const cross = [];
+          for (let e = 0; e < 3; e++) {
+            const pa = tri[e], pb = tri[(e+1)%3];
+            const da = pa.y - cutY, db = pb.y - cutY;
+            if ((da <= 0 && db >= 0) || (db <= 0 && da >= 0)) {
+              if (Math.abs(pb.y - pa.y) > 1e-6) {
+                const t = (cutY - pa.y) / (pb.y - pa.y);
+                cross.push(new THREE.Vector3(pa.x + t*(pb.x-pa.x), cutY, pa.z + t*(pb.z-pa.z)));
+              }
+            }
+          }
+          if (cross.length >= 2) pts.push(cross[0], cross[1]);
+        });
+        if (pts.length < 10) return;
+
+        const cen = new THREE.Vector3();
+        pts.forEach(p => cen.add(p));
+        cen.divideScalar(pts.length);
+
+        const outer = [];
+        for (let k = 0; k < N; k++) {
+          const targetAng = -Math.PI + (k / N) * Math.PI * 2;
+          let best = pts[0], bestD = Infinity;
+          for (let i = 0; i < pts.length; i++) {
+            const ang = Math.atan2(pts[i].z - cen.z, pts[i].x - cen.x);
+            let da = Math.abs(ang - targetAng);
+            if (da > Math.PI) da = Math.PI * 2 - da;
+            if (da < bestD) { bestD = da; best = pts[i]; }
+          }
+          outer.push(best);
+        }
+
+        // Zhang O-grid: square inner brick core + 2 concentric radial rings (zero gap, zero center pole pinch)
+        const sqCorners = [0, 5, 10, 15].map(idx => cen.clone().lerp(outer[idx], 0.30));
+        const innerRing = [];
+        for (let q = 0; q < 4; q++) {
+          for (let m = 0; m < 5; m++) {
+            innerRing.push(sqCorners[q].clone().lerp(sqCorners[(q+1)%4], m / 5));
           }
         }
+        const midRing = innerRing.map((p, j) => p.clone().lerp(outer[j], 0.55));
+
+        for (let j = 0; j < N; j++) {
+          const jn = (j + 1) % N;
+          fillPos.push(cen.x, cutY, cen.z, outer[j].x, cutY, outer[j].z, outer[jn].x, cutY, outer[jn].z);
+          brickLines.push(innerRing[j].x, cutY, innerRing[j].z, innerRing[jn].x, cutY, innerRing[jn].z);
+          brickLines.push(midRing[j].x, cutY, midRing[j].z, midRing[jn].x, cutY, midRing[jn].z);
+          brickLines.push(outer[j].x, cutY, outer[j].z, outer[jn].x, cutY, outer[jn].z);
+          brickLines.push(innerRing[j].x, cutY, innerRing[j].z, outer[j].x, cutY, outer[j].z);
+        }
+        const s01 = sqCorners[0].clone().lerp(sqCorners[1], 0.5);
+        const s23 = sqCorners[2].clone().lerp(sqCorners[3], 0.5);
+        const s12 = sqCorners[1].clone().lerp(sqCorners[2], 0.5);
+        const s30 = sqCorners[3].clone().lerp(sqCorners[0], 0.5);
+        brickLines.push(s01.x, cutY, s01.z, s23.x, cutY, s23.z);
+        brickLines.push(s12.x, cutY, s12.z, s30.x, cutY, s30.z);
       });
+
       if (fillPos.length) {
         const fg = new THREE.BufferGeometry();
         fg.setAttribute('position', new THREE.Float32BufferAttribute(fillPos, 3));
-        sliceGrp.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.55, side: THREE.DoubleSide })));
+        sliceGrp.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({
+          color: 0x10b981, transparent: true, opacity: 0.58, side: THREE.DoubleSide
+        })));
         const bg = new THREE.BufferGeometry();
         bg.setAttribute('position', new THREE.Float32BufferAttribute(brickLines, 3));
         sliceGrp.add(new THREE.LineSegments(bg, new THREE.LineBasicMaterial({ color: 0xfef08a })));
@@ -173,13 +253,13 @@
       <div class="kicker green">Branch B &bull; Zhang et al. (2007)</div>
       <div class="title">Centerline Sweeping &amp; Structured NURBS Skin</div>
       <div class="badge-note">
-        <b>Literature Reference Only (Not Run in Gmsh):</b> Visualized directly on <b>0039_H_ABAO_AAA</b> by lofting your 259 SimVascular NURBS contours into structured quads &amp; radial bricks.
+        <b>Literature Reference Only (Not Run in Gmsh):</b> Visualized directly on <b>0039_H_ABAO_AAA</b> by smoothly lofting your 259 SimVascular NURBS contours into structured quads &amp; an O-grid brick slice.
       </div>
       <div class="card">
         <div class="sec-lbl">Sequential Branch B Steps</div>
         <div style="display:flex;flex-direction:column;gap:6px;">
           <button class="btn active" id="bb-s-b1" onclick="APP.modules.branchB.setStage('b1')">B1. 10 Real Centerlines &amp; 259 Lumen Contours</button>
-          <button class="btn" id="bb-s-b2" onclick="APP.modules.branchB.setStage('b2')">B2. Resulting Structured Quad Skin + Radial Hex Slice</button>
+          <button class="btn" id="bb-s-b2" onclick="APP.modules.branchB.setStage('b2')">B2. Smooth NURBS Quad Skin + O-Grid Brick Slice</button>
         </div>
       </div>
 
@@ -210,14 +290,14 @@
 
       <div id="bb-ctrl-b2" class="hidden">
         <div class="card">
-          <div class="sec-lbl">72-Slice Structured Brick Cutaway</div>
+          <div class="sec-lbl">72-Slice O-Grid Brick Cutaway</div>
           <div class="row">
             <label><input type="checkbox" id="bb-cut-on" checked onchange="APP.modules.branchB.syncB2()" /> Enable Cross-Section</label>
             <button class="btn" id="bb-sweep-btn" onclick="APP.modules.branchB.toggleSweep()">Auto-Sweep</button>
           </div>
           <input type="range" id="bb-cut" min="0" max="71" value="38" oninput="APP.modules.branchB.syncB2()" />
           <p class="copy" style="font-size:12px;margin-top:8px;">
-            Look closely at the outer skin: <b>smooth 4-sided quads (no triangles!)</b> lofted along the centerline, with concentric radial brick layers inside.
+            Notice the <b>square O-grid brick core</b> in the middle (no pie-wedge pinching!) surrounded by concentric brick rings flush with the smooth quad skin.
           </p>
         </div>
       </div>
@@ -279,7 +359,7 @@
       APP.resetCamera();
       document.getElementById('hud-left').textContent = (s==='b1')
         ? 'Branch B1: Real 10-Vessel Centerlines & 259 Contours on AAA'
-        : 'Branch B2: Zhang Structured Quad Skin + Radial Hex Slice (On Same AAA)';
+        : 'Branch B2: Zhang Smooth Quad Skin + O-Grid Brick Slice';
     },
     syncB1() {
       const sp = document.getElementById('bb-show-paths').checked;
