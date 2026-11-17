@@ -3,7 +3,7 @@
   const grp = APP.groups.branchB;
 
   let stage = 'b1';
-  let b1Play = true, b1Prog = 0;
+  let b1Play = false, b1Prog = 1;
   let gB1 = new THREE.Group(), gB2 = new THREE.Group(), gB3 = new THREE.Group();
   grp.add(gB1, gB2, gB3);
 
@@ -350,7 +350,7 @@
             <label><input type="checkbox" id="bb-show-rings" checked onchange="APP.modules.branchB.syncB1()" /> 259 Lumen Contours</label>
           </div>
           <div class="row" style="margin-top:6px;">
-            <button class="btn" id="bb-play-btn" onclick="APP.modules.branchB.togglePlay()">Pause</button>
+            <button class="btn" id="bb-play-btn" onclick="APP.modules.branchB.togglePlay()">Play</button>
             <span style="font-size:11.5px;color:var(--green);font-weight:700;">Sweep Along Aorta</span>
           </div>
           ${APP.stepperHtml('bb-b1', 'green')}
@@ -509,6 +509,7 @@
       document.getElementById('hud-left').textContent = labels[s] || '';
     },
     syncB1() {
+      if (APP.activeBeat === 3 && stage === 'b1') APP.syncDockSlice({ visible: false });
       const sp = document.getElementById('bb-show-paths').checked;
       pathLines.forEach((l, i) => l.visible = sp && (selectedVessel === null || selectedVessel === i));
       updateB1Sweep(b1Prog);
@@ -518,11 +519,18 @@
       const on = document.getElementById('bb-cut-on').checked;
       const cuts = APP.D.meta.cuts, yMin = cuts[0], yMax = cuts[cuts.length - 1];
       const cutY = yMin + (b2CutIdx / 359) * (yMax - yMin);
-      APP.setClipPlane(b2ClipPlane, cutY, on);
+      APP.setClipPlane(b2ClipPlane, cutY, on, grp);
       b2System.updateCut(cutY, on);
       const lbl = document.getElementById('bb-b2-lbl'), bar = document.getElementById('bb-b2-bar');
       if (lbl) lbl.textContent = `Slice ${b2CutIdx + 1} / 360 (y=${cutY.toFixed(2)})`;
       if (bar) bar.style.width = `${((b2CutIdx / 359) * 100).toFixed(1)}%`;
+      if (APP.activeBeat === 3 && stage === 'b2') {
+        APP.syncDockSlice({
+          visible: true, idx: b2CutIdx, max: 359, sweeping: b2Sweeping,
+          onScrub: (v) => { b2Sweeping = false; document.getElementById('bb-cut-on').checked = true; b2CutIdx = v; APP.modules.branchB.syncB2(); },
+          onSweep: () => APP.modules.branchB.toggleSweep()
+        });
+      }
     },
     syncB3() {
       if (!APP.D || !b3System) return;

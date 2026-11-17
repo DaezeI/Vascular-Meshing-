@@ -236,7 +236,7 @@
       document.getElementById('ba-bad-card').classList.toggle('hidden', s!=='a3');
       const figMap = { a1: 'fig3-harmonic', a2: 'fig4-tet', a3: 'fig5-bl-inversion' };
       APP.setFigure(figMap[s] || 'fig3-harmonic');
-      if (s === 'a1') { this.setA1Sub(a1Sub); document.getElementById('hud-left').textContent = 'Fig. 3: Marchandise et al. (2010) 2D Harmonic Surface Remeshing'; }
+      if (s === 'a1') { APP.syncDockSlice({ visible: false }); this.setA1Sub(a1Sub); document.getElementById('hud-left').textContent = 'Fig. 3: Marchandise et al. (2010) 2D Harmonic Surface Remeshing'; }
       if (s === 'a2') { this.syncCut(); APP.resetCamera(); document.getElementById('hud-left').textContent = 'Fig. 4: Isotropic Tetrahedral Core (73,842 Tets, 0 Inverted)'; }
       if (s === 'a3') { this.syncCut(); this.syncBad(); APP.resetCamera(); document.getElementById('hud-left').textContent = 'Fig. 5: Hybrid 5-Layer Prisms + Tet Core (10 Inverted Prisms)'; }
     },
